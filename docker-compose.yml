@@ -1,0 +1,51 @@
+version: "3"
+services:
+
+  shell:
+    image: ayberkydn/deep-learning
+    ipc: host
+    volumes:
+      - ~:/home/ayb
+    working_dir: ${PWD}
+    command: "/bin/bash"
+    stdin_open: true
+    tty: true
+
+  main:
+    image: ayberkydn/deep-learning
+    ipc: host
+    volumes:
+      - ~:/home/ayb
+    working_dir: ${PWD}
+    command: "python main.py"
+    stdin_open: true
+    tty: true
+
+  notebook:
+    image: ayberkydn/deep-learning
+    ipc: host
+    ports:
+      - 8080:8080
+    volumes:
+      - ~:/home/ayb
+    working_dir: ${PWD}
+    command: "jupyter notebook --ip=0.0.0.0 --port=8080 --no-browser --allow-root" 
+  
+  lab:
+    image: ayberkydn/deep-learning
+    ipc: host
+    ports:
+      - 8888:8888
+    volumes:
+      - ~:/home/ayb
+    working_dir: ${PWD}
+    command: "jupyter-lab --ip 0.0.0.0 --port 8888 --no-browser --allow-root --ServerApp.token='' --ServerApp.password=''"
+  
+  tensorboard:
+    image: ayberkydn/deep-learning
+    ports:
+      - 6006:6006
+    volumes:
+      - ~:/home/ayb
+    working_dir: ${PWD}
+    command: "tensorboard --logdir . --port 6006 --host '0.0.0.0'"
