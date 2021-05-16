@@ -3,6 +3,7 @@ services:
 
   shell:
     image: ayberkydn/deep-learning
+    runtime: nvidia
     ipc: host
     volumes:
       - ~:/home/ayb
@@ -13,6 +14,7 @@ services:
 
   main:
     image: ayberkydn/deep-learning
+    runtime: nvidia
     ipc: host
     volumes:
       - ~:/home/ayb
@@ -20,19 +22,10 @@ services:
     command: "python main.py"
     stdin_open: true
     tty: true
-
-  notebook:
-    image: ayberkydn/deep-learning
-    ipc: host
-    ports:
-      - 8080:8080
-    volumes:
-      - ~:/home/ayb
-    working_dir: ${PWD}
-    command: "jupyter notebook --ip=0.0.0.0 --port=8080 --no-browser --allow-root" 
   
   lab:
     image: ayberkydn/deep-learning
+    runtime: nvidia
     ipc: host
     ports:
       - 8888:8888
