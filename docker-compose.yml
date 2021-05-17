@@ -13,6 +13,8 @@ services:
 
   main:
     image: ayberkydn/deep-learning
+    runtime: nvidia
+    user: ayb
     ipc: host
     volumes:
       - ~:/home/ayb
