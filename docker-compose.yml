@@ -1,45 +1,39 @@
 version: "3"
-services:
 
+x-base: &default-settings
+  image: ayberkydn/deep-learning
+  user: ayb
+  runtime: nvidia
+  ipc: host
+  working_dir: ${PWD}
+  volumes:
+    - ~:/home/ayb
+
+services:
   shell:
-    image: ayberkydn/deep-learning
-    runtime: nvidia
-    ipc: host
+    <<: *default-settings
     volumes:
       - ~:/home/ayb
-    working_dir: ${PWD}
     command: "/bin/bash"
     stdin_open: true
     tty: true
 
   main:
-    image: ayberkydn/deep-learning
-    runtime: nvidia
-    user: ayb
-    ipc: host
+    <<: *default-settings
     volumes:
       - ~:/home/ayb
-    working_dir: ${PWD}
     command: "python main.py"
     stdin_open: true
     tty: true
   
   lab:
-    image: ayberkydn/deep-learning
-    runtime: nvidia
-    ipc: host
+    <<: *default-settings
     ports:
       - 8888:8888
-    volumes:
-      - ~:/home/ayb
-    working_dir: ${PWD}
     command: "jupyter-lab --ip 0.0.0.0 --port 8888 --no-browser --allow-root --ServerApp.token='' --ServerApp.password=''"
   
   tensorboard:
-    image: ayberkydn/deep-learning
+    <<: *default-settings
     ports:
       - 6006:6006
-    volumes:
-      - ~:/home/ayb
-    working_dir: ${PWD}
     command: "tensorboard --logdir . --port 6006 --host '0.0.0.0'"
