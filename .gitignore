@@ -1,6 +1,4 @@
-__pycache__
-.ipynb_checkpoints/
-*.avi
-*.mp4
-
-
+# Ignore everything in this directory
+*
+# Except this file
+!.gitignore
