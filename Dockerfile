@@ -1,4 +1,9 @@
 FROM ayberkydn/deep-learning
 
-RUN useradd -ms /bin/bash ayb
-RUN apt install gifsicle
+# add user
+ARG USERNAME=ayb
+RUN useradd -ms /bin/bash  $USERNAME
+USER $USERNAME
+
+# install language related things
+RUN pip install black

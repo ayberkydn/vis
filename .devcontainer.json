@@ -1,6 +1,8 @@
 {
-	"image": "ayberkydn/deep-learning",
+	"dockerFile": "Dockerfile",
+	"context": "..",
 	"extensions": [
-		"ms-python.python"
-	]
+		"ms-python.python",
+		"ms-python.vscode-pylance"
+	],
 }
