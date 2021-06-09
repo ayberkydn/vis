@@ -1,4 +1,6 @@
-# Ignore everything in this directory
-*
-# Except this file
-!.gitignore
+**/__pycache__
+.ipynb_checkpoints/
+outputs/
+logs/
+*.avi
+
