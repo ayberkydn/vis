@@ -1,8 +1,13 @@
 {
-	"dockerFile": "Dockerfile",
-    "runArgs": ["--runtime=nvidia"],
-	"extensions": [
-		"ms-python.python",
-		"ms-python.vscode-pylance"
-	]
+  "dockerFile": "./Dockerfile",
+  "initializeCommand": "git pull",
+  "mounts": [
+    "source=${localEnv:HOME}/.cache,target=/home/user/.cache,type=bind"
+  ],
+  "runArgs": ["--runtime=nvidia"],
+  "extensions": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "esbenp.prettier-vscode"
+  ]
 }

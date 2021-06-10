@@ -1,3 +1,4 @@
+#%%
 import torch, torchvision
 import matplotlib.pyplot as plt
 import kornia
@@ -12,8 +13,12 @@ import numpy as np
 from PIL import Image
 import random
 import os
-from utils import InputImageLayer
-from utils import get_timm_networks, probability_maximizer_loss
+from src.utils import InputImageLayer
+from src.utils import (
+    get_timm_networks,
+    probability_maximizer_loss,
+    imagenet_class_name_of,
+)
 
 
 aug_fn = torch.nn.Sequential(
@@ -43,17 +48,17 @@ input_img_layer = InputImageLayer(
 
 network_names = [
     "vit_base_patch16_224",
-    # "resnet50",
-    # "tf_efficientnet_b0_ap",
-    # "adv_inception_v3",
-    # "inception_v4",
-    # "dla102",
-    # "densenet121",
-    # "mobilenetv3_large_100",
-    # "resnext101_32x8d",
-    # "seresnet152d",
-    # "ig_resnext101_32x16d",
-    # "nf_resnet50",
+    "resnet50",
+    "tf_efficientnet_b0_ap",
+    "adv_inception_v3",
+    "inception_v4",
+    "dla102",
+    "densenet121",
+    "mobilenetv3_large_100",
+    "resnext101_32x8d",
+    "seresnet152d",
+    "ig_resnext101_32x16d",
+    "nf_resnet50",
 ]
 
 networks = get_timm_networks(network_names)
@@ -62,7 +67,7 @@ optimizer = torch.optim.Adam(input_img_layer.parameters(), lr=0.01)
 
 TARGET_CLASS = 35
 ITERATIONS = 100
-BATCH_SIZE = 1
+BATCH_SIZE = 16
 TV_LOSS_COEFF = 0
 
 #%%
