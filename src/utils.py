@@ -1,6 +1,7 @@
 import timm
 import torch
 import einops
+import matplotlib.pyplot as plt
 
 
 def imagenet_class_name_of(n: int) -> str:
@@ -31,6 +32,24 @@ def probability_maximizer_loss(x, target_class):
 
     target = torch.ones(size=[b], dtype=torch.long, device=x.device) * target_class
     return torch.nn.CrossEntropyLoss()(x, target)
+
+
+def show_nonzero_grads(input_img_layer, aug_fn):
+    input_imgs = input_img_layer(1)
+    input_imgs.retain_grad()
+    aug_imgs = aug_fn(input_imgs)
+    loss = aug_imgs.mean()
+    loss.backward()
+    grads = torch.tensor(input_imgs.grad == 0, dtype=torch.float)
+    plt.imshow(t2i(grads))
+
+
+def add_noise(network, factor):
+    new_network = copy.deepcopy(network)
+    with torch.no_grad():
+        for param in new_network.parameters():
+            param += torch.randn_like(param) * param.std() * factor
+    return new_network
 
 
 class InputImageLayer(torch.nn.Module):
