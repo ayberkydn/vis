@@ -22,14 +22,14 @@ def get_timm_networks(network_name_list):
 
 
 def score_maximizer_loss(x, target_class):
-    pass
+    return -x[:, target_class].mean()
 
 
 def probability_maximizer_loss(x, target_class):
     b = x.shape[0]
     dev = x.device
 
-    target = torch.ones(size=[b], dtype=torch.long, device=x.device)
+    target = torch.ones(size=[b], dtype=torch.long, device=x.device) * target_class
     return torch.nn.CrossEntropyLoss()(x, target)
 
 
@@ -57,4 +57,4 @@ class InputImageLayer(torch.nn.Module):
             b=batch_size,
         )
 
-        return self.param_fn(self.input_tensor)
+        return self.param_fn(batch)
