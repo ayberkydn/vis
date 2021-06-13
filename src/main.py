@@ -77,7 +77,8 @@ for TARGET_CLASS in range(1):
         optimizer.step()
         optimizer.zero_grad()
 
-    plt.figure(figsize=[10,10])
-    plt.imshow(t2i(input_img_layer(1))); plt.show()
+    plt.figure(figsize=[10, 10])
+    plt.imshow(t2i(input_img_layer(1)))
+    plt.show()
 
 # %%
