@@ -13,9 +13,11 @@ from src.utils import (
     score_maximizer_loss,
     imagenet_class_name_of,
     show_nonzero_grads,
+    add_noise,
+    Torus,
 )
 
-IMG_SIZE = 256
+IMG_SIZE = 512
 NET_INPUT_SIZE = 224
 
 input_img_layer = InputImageLayer(
@@ -28,21 +30,19 @@ input_img_layer = InputImageLayer(
 ).cuda()
 
 aug_fn = torch.nn.Sequential(
-    # torchvision.transforms.Pad(
-    #     padding_mode="reflect",
-    #     padding=[128, 128],
-    # ),
+    Torus(),
+    kornia.augmentation.RandomRotation(
+        degrees=45,
+        same_on_batch=False,
+    ),
     kornia.augmentation.RandomResizedCrop(
         size=(224, 224),
-        scale=(224 / 256, 224 / 256),
-        ratio=(1, 1),  # aspect ratio
-        same_on_batch=False,
-        resample="bicubic",
-    ),
-    kornia.augmentation.RandomRotation(
-        degrees=0,
+        scale=(0.25, 1),
+        ratio=(0.5, 2),  # aspect ratio
         same_on_batch=False,
     ),
+    kornia.augmentation.RandomHorizontalFlip(),
+    kornia.augmentation.RandomVerticalFlip(),
 )
 
 normalize = torchvision.transforms.Normalize(
@@ -52,56 +52,32 @@ normalize = torchvision.transforms.Normalize(
 
 
 network_names = [
+    "resnet18",
+    "resnet34",
     "resnet50",
-    "inception_v4",
-    "densenet121",
 ]
 
 networks = get_timm_networks(network_names)
 
-optimizer = torch.optim.Adam(input_img_layer.parameters(), lr=0.05)
+optimizer = torch.optim.Adam(input_img_layer.parameters(), lr=0.01)
 #%% train
-TARGET_CLASS = 309
-ITERATIONS = 5000
+ITERATIONS = 1000
 BATCH_SIZE = 8
-
-for n in tqdm.tqdm(range(ITERATIONS)):
-    for net in networks:
-        aug_net = add_noise()
+for TARGET_CLASS in range(1):
+    for n in tqdm.tqdm(range(ITERATIONS)):
+        net = random.choice(networks)
         input_imgs = input_img_layer(BATCH_SIZE)
         aug_imgs = aug_fn(input_imgs)
         out = net(normalize(aug_imgs))
-        prob_loss = probability_maximizer_loss(out, TARGET_CLASS) / len(networks)
-        loss = prob_loss
+        prob_loss = probability_maximizer_loss(out, TARGET_CLASS)
+        score_loss = score_maximizer_loss(out, TARGET_CLASS)
+        loss = (prob_loss + score_loss) / 2
         loss.backward()
 
-    optimizer.step()
-    optimizer.zero_grad()
-#%%
+        optimizer.step()
+        optimizer.zero_grad()
 
-
-show_nonzero_grads(input_img_layer, aug_fn)
-
-#%%
-
-
-def validate(networks, img_layer, aug_fn, normalize):
-    with torch.no_grad():
-        min_prob = 1
-        for n in range(32):
-            imgs = img_layer
-            input_imgs = input_img_layer(32)
-            aug_imgs = aug_fn(input_imgs)
-            out = net(normalize(aug_imgs))
-            probs = torch.softmax(out, dim=-1)[:, TARGET_CLASS]
-            min_prob = probs.min() if probs.min() < min_prob else min_prob
-        print(min_prob)
-
+    plt.figure(figsize=[10,10])
+    plt.imshow(t2i(input_img_layer(1))); plt.show()
 
 # %%
-final_img = input_img_layer(1)
-plt.figure(figsize=(10, 10))
-plt.imshow(t2i(final_img))
-plt.show()
-plt.savefig("bee.png")
-plt.close()

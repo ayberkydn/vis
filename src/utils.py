@@ -2,6 +2,7 @@ import timm
 import torch
 import einops
 import matplotlib.pyplot as plt
+import copy
 
 
 def imagenet_class_name_of(n: int) -> str:
@@ -52,6 +53,29 @@ def add_noise(network, factor):
     return new_network
 
 
+def validate(networks, img_layer, aug_fn, normalize):
+    with torch.no_grad():
+        min_prob = 1
+        for n in range(32):
+            imgs = img_layer
+            input_imgs = input_img_layer(32)
+            aug_imgs = aug_fn(input_imgs)
+            out = net(normalize(aug_imgs))
+            probs = torch.softmax(out, dim=-1)[:, TARGET_CLASS]
+            min_prob = probs.min() if probs.min() < min_prob else min_prob
+        print(min_prob)
+
+
+class Torus(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        img_width_expand = torch.cat([x, x], dim=-1)
+        img_torus = torch.cat([img_width_expand, img_width_expand], dim=-2)
+        return img_torus
+
+
 class InputImageLayer(torch.nn.Module):
     def __init__(self, shape, param_fn=None):
 
@@ -64,7 +88,7 @@ class InputImageLayer(torch.nn.Module):
             self.param_fn = param_fn
 
         self.input_tensor = torch.nn.Parameter(
-            torch.randn(shape),
+            torch.zeros(shape),
             requires_grad=True,
         )
         self.param_fn = param_fn
