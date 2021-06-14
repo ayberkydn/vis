@@ -47,7 +47,11 @@ aug_fn = torch.nn.Sequential(
         scale=(0.1, 1),
         ratio=(0.8, 1.2),  # aspect ratio
         same_on_batch=False,
-        # resample="bicubic",
+    ),
+    kornia.augmentation.RandomPerspective(
+        scale=0.5,
+        p=1,
+        same_on_batch=False,
     ),
     kornia.augmentation.RandomHorizontalFlip(),
     kornia.augmentation.RandomVerticalFlip(),
