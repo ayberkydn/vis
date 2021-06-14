@@ -34,17 +34,10 @@ def get_timm_networks(network_name_list):
         mean = config["mean"]
         std = config["std"]
 
-        logging.debug(f"Network name: {name}")
-        logging.debug(f"Mean: {mean}")
-        logging.debug(f"Std: {std}")
-        logging.debug(f"Input size: {input_size}")
-
-        transform = torchvision.transforms.Compose(
-            [
-                torchvision.transforms.Resize(input_size),
-                torchvision.transforms.Normalize(mean, std),
-            ]
-        )
+        logging.info(f"Network name: {name}")
+        logging.info(f"Mean: {mean}")
+        logging.info(f"Std: {std}")
+        logging.info(f"Input size: {input_size}")
 
         preprocess = torch.nn.Sequential(
             torchvision.transforms.Resize(input_size),

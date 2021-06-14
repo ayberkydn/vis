@@ -8,7 +8,7 @@ import random
 
 import logging
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARN)
 
 from src.utils import (
     InputImageLayer,
@@ -55,37 +55,19 @@ aug_fn = torch.nn.Sequential(
 
 
 network_names = [
-    # "densenet121",  # good
-    # "resnet50",  # good
-    "resnet18",  # good
-    # "efficientnet_b4",  # bad
-    # "efficientnet_b1",  # bad
-    # "efficientnet_b1_pruned",  # bad
-    # "inception_v4",  # good
-    # "adv_inception_v3",  # good
-    # "vit_base_patch16_224",  # meh
+    "densenet121",  # good
+    "resnet50",  # good
+    "efficientnet_b4",  # bad
+    "inception_v4",  # good
+    "vit_base_patch16_224",  # meh
 ]
 
 networks = get_timm_networks(network_names)
-optimizer = torch.optim.Adam(input_img_layer.parameters(), lr=0.01)
+optimizer = torch.optim.Adam(input_img_layer.parameters(), lr=0.02)
 
-#%%
-plt.imshow(t2i(nonzero_grads(input_img_layer, aug_fn)))
-plt.show()
-
-
-#%%
-sample_ratio_map = pixel_sample_ratio_map(
-    input_img_layer, aug_fn, times=10, sample_size=64
-)
-print(f"Max %: {sample_ratio_map.max().item()}")
-print(f"Min %: {sample_ratio_map.min().item()}")
-print(f"Mean %: {sample_ratio_map.mean().item()}")
-print(f"Std %: {sample_ratio_map.std().item()}")
-#%%
 
 #%% train
-ITERATIONS = 10000
+ITERATIONS = 1000
 BATCH_SIZE = 8
 for TARGET_CLASS in [309]:
     for n in tqdm.tqdm(range(ITERATIONS)):
@@ -96,7 +78,7 @@ for TARGET_CLASS in [309]:
 
         prob_loss = probability_maximizer_loss(out, TARGET_CLASS)
         score_loss = score_maximizer_loss(out, TARGET_CLASS)
-        loss = (prob_loss + score_loss) / 2
+        loss = (prob_loss + prob_loss) / 2
         loss.backward()
 
         optimizer.step()
@@ -105,6 +87,12 @@ for TARGET_CLASS in [309]:
 # %%
 
 plt.figure(figsize=[10, 10])
+
 plt.imshow(t2i(input_img_layer(1)))
 plt.show()
 # %%
+with torch.no_grad():
+    input_imgs = input_img_layer(32)
+    aug_imgs = aug_fn(input_imgs)
+    out = net(aug_imgs)
+    probs = torch.softmax(out, dim=-1)
