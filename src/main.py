@@ -6,6 +6,10 @@ from kornia import tensor_to_image as t2i
 import tqdm
 import random
 
+import logging
+
+logging.basicConfig(level=logging.INFO)
+
 from src.utils import (
     InputImageLayer,
     get_timm_networks,
@@ -49,21 +53,17 @@ aug_fn = torch.nn.Sequential(
     kornia.augmentation.RandomVerticalFlip(),
 )
 
-normalize = torchvision.transforms.Normalize(
-    mean=[0.485, 0.456, 0.406],
-    std=[0.229, 0.224, 0.225],
-)
-
 
 network_names = [
-    # "resnet50", #good
-    # "densenet121", #good
-    # "efficientnet_b4", #bad
-    # "efficientnet_b1", #bad
-    # "efficientnet_b1_pruned", #bad
-    # 'inception_v4' #good
-    # 'adv_inception_v3', #good
-    # "vit_base_patch16_224", #meh
+    # "densenet121",  # good
+    # "resnet50",  # good
+    "resnet18",  # good
+    # "efficientnet_b4",  # bad
+    # "efficientnet_b1",  # bad
+    # "efficientnet_b1_pruned",  # bad
+    # "inception_v4",  # good
+    # "adv_inception_v3",  # good
+    # "vit_base_patch16_224",  # meh
 ]
 
 networks = get_timm_networks(network_names)
@@ -85,15 +85,15 @@ print(f"Std %: {sample_ratio_map.std().item()}")
 #%%
 
 #%% train
-ITERATIONS = 1000
+ITERATIONS = 10000
 BATCH_SIZE = 8
 for TARGET_CLASS in [309]:
     for n in tqdm.tqdm(range(ITERATIONS)):
         net = random.choice(networks)
         input_imgs = input_img_layer(BATCH_SIZE)
         aug_imgs = aug_fn(input_imgs)
-        out = net(normalize(aug_imgs))
-        # out = net(aug_imgs)
+        out = net(aug_imgs)
+
         prob_loss = probability_maximizer_loss(out, TARGET_CLASS)
         score_loss = score_maximizer_loss(out, TARGET_CLASS)
         loss = (prob_loss + score_loss) / 2
@@ -101,10 +101,6 @@ for TARGET_CLASS in [309]:
 
         optimizer.step()
         optimizer.zero_grad()
-
-    plt.figure(figsize=[10, 10])
-    plt.imshow(t2i(input_img_layer(1)))
-    plt.show()
 
 # %%
 

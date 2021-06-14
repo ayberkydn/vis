@@ -1,9 +1,13 @@
-import timm
-import torch
-import einops
-import matplotlib.pyplot as plt
 import copy
+
+import einops
 import kornia
+import matplotlib.pyplot as plt
+import timm
+from timm.data import resolve_data_config
+import torch
+import torchvision
+import logging
 
 
 def imagenet_class_name_of(n: int) -> str:
@@ -13,13 +17,46 @@ def imagenet_class_name_of(n: int) -> str:
 
 
 def get_timm_networks(network_name_list):
+    """
+    - Creates networks, moves to cuda, disables parameter grads and set eval mode.
+    - Merges the necessary normalization preprocessing with the networks
+    - Returns the list of networks
+    """
     networks = []
     for name in network_name_list:
         network = timm.create_model(name, pretrained=True).eval().cuda()
+        config = resolve_data_config({}, model=network)
+
         for param in network.parameters():
             param.requires_grad = False
 
-        networks.append(network)
+        input_size = config["input_size"][-2:]
+        mean = config["mean"]
+        std = config["std"]
+
+        logging.debug(f"Network name: {name}")
+        logging.debug(f"Mean: {mean}")
+        logging.debug(f"Std: {std}")
+        logging.debug(f"Input size: {input_size}")
+
+        transform = torchvision.transforms.Compose(
+            [
+                torchvision.transforms.Resize(input_size),
+                torchvision.transforms.Normalize(mean, std),
+            ]
+        )
+
+        preprocess = torch.nn.Sequential(
+            torchvision.transforms.Resize(input_size),
+            torchvision.transforms.Normalize(mean, std),
+        )
+
+        pre_and_net = torch.nn.Sequential(
+            preprocess,
+            network,
+        )
+
+        networks.append(pre_and_net)
 
     return networks
 
@@ -42,19 +79,6 @@ def add_noise(network, factor):
         for param in new_network.parameters():
             param += torch.randn_like(param) * param.std() * factor
     return new_network
-
-
-def validate(networks, img_layer, aug_fn, normalize):
-    with torch.no_grad():
-        min_prob = 1
-        for n in range(32):
-            imgs = img_layer
-            input_imgs = input_img_layer(32)
-            aug_imgs = aug_fn(input_imgs)
-            out = net(normalize(aug_imgs))
-            probs = torch.softmax(out, dim=-1)[:, TARGET_CLASS]
-            min_prob = probs.min() if probs.min() < min_prob else min_prob
-        print(min_prob)
 
 
 class RandomCircularShift(torch.nn.Module):
