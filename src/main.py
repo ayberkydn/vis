@@ -12,34 +12,38 @@ from src.utils import (
     probability_maximizer_loss,
     score_maximizer_loss,
     imagenet_class_name_of,
-    show_nonzero_grads,
     add_noise,
-    Torus,
+    RandomCircularShift,
 )
 
-IMG_SIZE = 512
+from src.debug import (
+    nonzero_grads,
+    pixel_sample_ratio_map,
+)
+
+IMG_SIZE = 256
 NET_INPUT_SIZE = 224
 
 input_img_layer = InputImageLayer(
     shape=[3, IMG_SIZE, IMG_SIZE],
     param_fn=torch.nn.Sequential(
         torch.nn.Sigmoid(),
-        # kornia.filters.MedianBlur([5, 5]),
-        # torchvision.transforms.GaussianBlur(5, sigma=2)
     ),
 ).cuda()
 
 aug_fn = torch.nn.Sequential(
-    Torus(),
+    RandomCircularShift(),
     kornia.augmentation.RandomRotation(
-        degrees=45,
+        degrees=90,
         same_on_batch=False,
+        p=1,
     ),
     kornia.augmentation.RandomResizedCrop(
         size=(224, 224),
-        scale=(0.25, 1),
-        ratio=(0.5, 2),  # aspect ratio
+        scale=(0.1, 1),
+        ratio=(0.8, 1.2),  # aspect ratio
         same_on_batch=False,
+        # resample="bicubic",
     ),
     kornia.augmentation.RandomHorizontalFlip(),
     kornia.augmentation.RandomVerticalFlip(),
@@ -52,23 +56,44 @@ normalize = torchvision.transforms.Normalize(
 
 
 network_names = [
-    "resnet18",
-    "resnet34",
-    "resnet50",
+    # "resnet50", #good
+    # "densenet121", #good
+    # "efficientnet_b4", #bad
+    # "efficientnet_b1", #bad
+    # "efficientnet_b1_pruned", #bad
+    # 'inception_v4' #good
+    # 'adv_inception_v3', #good
+    # "vit_base_patch16_224", #meh
 ]
 
 networks = get_timm_networks(network_names)
-
 optimizer = torch.optim.Adam(input_img_layer.parameters(), lr=0.01)
+
+#%%
+plt.imshow(t2i(nonzero_grads(input_img_layer, aug_fn)))
+plt.show()
+
+
+#%%
+sample_ratio_map = pixel_sample_ratio_map(
+    input_img_layer, aug_fn, times=10, sample_size=64
+)
+print(f"Max %: {sample_ratio_map.max().item()}")
+print(f"Min %: {sample_ratio_map.min().item()}")
+print(f"Mean %: {sample_ratio_map.mean().item()}")
+print(f"Std %: {sample_ratio_map.std().item()}")
+#%%
+
 #%% train
 ITERATIONS = 1000
 BATCH_SIZE = 8
-for TARGET_CLASS in range(1):
+for TARGET_CLASS in [309]:
     for n in tqdm.tqdm(range(ITERATIONS)):
         net = random.choice(networks)
         input_imgs = input_img_layer(BATCH_SIZE)
         aug_imgs = aug_fn(input_imgs)
         out = net(normalize(aug_imgs))
+        # out = net(aug_imgs)
         prob_loss = probability_maximizer_loss(out, TARGET_CLASS)
         score_loss = score_maximizer_loss(out, TARGET_CLASS)
         loss = (prob_loss + score_loss) / 2
@@ -81,4 +106,9 @@ for TARGET_CLASS in range(1):
     plt.imshow(t2i(input_img_layer(1)))
     plt.show()
 
+# %%
+
+plt.figure(figsize=[10, 10])
+plt.imshow(t2i(input_img_layer(1)))
+plt.show()
 # %%

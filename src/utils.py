@@ -3,6 +3,7 @@ import torch
 import einops
 import matplotlib.pyplot as plt
 import copy
+import kornia
 
 
 def imagenet_class_name_of(n: int) -> str:
@@ -35,16 +36,6 @@ def probability_maximizer_loss(x, target_class):
     return torch.nn.CrossEntropyLoss()(x, target)
 
 
-def show_nonzero_grads(input_img_layer, aug_fn):
-    input_imgs = input_img_layer(1)
-    input_imgs.retain_grad()
-    aug_imgs = aug_fn(input_imgs)
-    loss = aug_imgs.mean()
-    loss.backward()
-    grads = torch.tensor(input_imgs.grad == 0, dtype=torch.float)
-    plt.imshow(t2i(grads))
-
-
 def add_noise(network, factor):
     new_network = copy.deepcopy(network)
     with torch.no_grad():
@@ -66,14 +57,18 @@ def validate(networks, img_layer, aug_fn, normalize):
         print(min_prob)
 
 
-class Torus(torch.nn.Module):
+class RandomCircularShift(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, x):
-        img_width_expand = torch.cat([x, x], dim=-1)
-        img_torus = torch.cat([img_width_expand, img_width_expand], dim=-2)
-        return img_torus
+        H = x.shape[-2]
+        W = x.shape[-1]
+
+        img_width_expand = torch.cat([x] * 2, dim=-1)
+        img_torus = torch.cat([img_width_expand] * 2, dim=-2)
+
+        return kornia.augmentation.RandomCrop(size=[H, W])(img_torus)
 
 
 class InputImageLayer(torch.nn.Module):
