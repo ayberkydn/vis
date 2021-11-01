@@ -1,4 +1,5 @@
 #%%
+from numpy.lib.function_base import gradient
 import torch, torchvision
 import matplotlib.pyplot as plt
 import kornia
@@ -49,7 +50,7 @@ aug_fn = torch.nn.Sequential(
         same_on_batch=False,
     ),
     kornia.augmentation.RandomPerspective(
-        scale=0.5,
+        distortion_scale=0.5,
         p=1,
         same_on_batch=False,
     ),
@@ -71,7 +72,7 @@ optimizer = torch.optim.Adam(input_img_layer.parameters(), lr=0.02)
 
 
 #%% train
-ITERATIONS = 1000
+ITERATIONS = 10000
 BATCH_SIZE = 8
 for TARGET_CLASS in [309]:
     for n in tqdm.tqdm(range(ITERATIONS)):
@@ -80,10 +81,14 @@ for TARGET_CLASS in [309]:
         aug_imgs = aug_fn(input_imgs)
         out = net(aug_imgs)
 
-        prob_loss = probability_maximizer_loss(out, TARGET_CLASS)
-        score_loss = score_maximizer_loss(out, TARGET_CLASS)
-        loss = (prob_loss + prob_loss) / 2
-        loss.backward()
+        out_grad = torch.ones_like(out) / out.shape[-1]
+        out_grad[:, TARGET_CLASS] = -1
+        out.backward(out_grad)
+
+        # prob_loss = probability_maximizer_loss(out, TARGET_CLASS)
+        # score_loss = score_maximizer_loss(out, TARGET_CLASS)
+        # loss = (prob_loss + prob_loss) / 2
+        # loss.backward()
 
         optimizer.step()
         optimizer.zero_grad()
