@@ -6,10 +6,10 @@ import kornia
 from kornia import tensor_to_image as t2i
 import tqdm
 import random
+import wandb
 
-import logging
+wandb.login()
 
-logging.basicConfig(level=logging.WARN)
 
 from src.utils import (
     InputImageLayer,
@@ -26,7 +26,7 @@ from src.debug import (
     pixel_sample_ratio_map,
 )
 
-IMG_SIZE = 512
+IMG_SIZE = 224
 NET_INPUT_SIZE = 224
 
 input_img_layer = InputImageLayer(
@@ -38,15 +38,15 @@ input_img_layer = InputImageLayer(
 
 aug_fn = torch.nn.Sequential(
     RandomCircularShift(),
-    # kornia.augmentation.RandomRotation(
-    #     degrees=90,
-    #     same_on_batch=False,
-    #     p=1,
-    # ),
+    kornia.augmentation.RandomRotation(
+        degrees=30,
+        same_on_batch=False,
+        p=1,
+    ),
     kornia.augmentation.RandomResizedCrop(
-        size=(NET_INPUT_SIZE, NET_INPUT_SIZE),
-        scale=(0.1, 1),
-        ratio=(0.8, 1.2),  # aspect ratio
+        size=(224, 224),
+        scale=(1, 1),
+        ratio=(1, 1),  # aspect ratio
         same_on_batch=False,
     ),
     # kornia.augmentation.RandomPerspective(
@@ -61,7 +61,6 @@ aug_fn = torch.nn.Sequential(
 
 network_names = [
     # "densenet121",  # good
-    # "resnet50",  # good
     "resnet18",  # good
     # "efficientnet_b4",  # bad
     # "inception_v4",  # good
@@ -69,26 +68,30 @@ network_names = [
 ]
 
 networks = get_timm_networks(network_names)
-optimizer = torch.optim.Adam(input_img_layer.parameters(), lr=0.025)
+optimizer = torch.optim.Adam(input_img_layer.parameters(), lr=0.05)
 
 
 #%% train
-ITERATIONS = 100
-BATCH_SIZE = 16
-for TARGET_CLASS in [309]:
-    for n in tqdm.tqdm(range(ITERATIONS)):
-        net = random.choice(networks)
-        input_imgs = input_img_layer(BATCH_SIZE)
-        aug_imgs = aug_fn(input_imgs)
-        out = net(aug_imgs)
+with wandb.init(project="vis"):
+    wandb.watch(input_img_layer, log="all", log_freq=1)
+    ITERATIONS = 5000
+    BATCH_SIZE = 1
+    for TARGET_CLASS in [309]:
+        for n in tqdm.tqdm(range(ITERATIONS)):
+            net = random.choice(networks)
+            input_imgs = input_img_layer(BATCH_SIZE)
+            aug_imgs = aug_fn(input_imgs)
+            out = net(aug_imgs)
 
-        prob_loss = probability_maximizer_loss(out, TARGET_CLASS)
-        score_loss = score_maximizer_loss(out, TARGET_CLASS)
-        loss = score_loss
-        loss.backward()
+            prob_loss = probability_maximizer_loss(out, TARGET_CLASS)
+            score_loss = score_maximizer_loss(out, TARGET_CLASS)
+            loss = prob_loss
+            loss.backward()
 
-        optimizer.step()
-        optimizer.zero_grad()
+            wandb.log({"loss": loss})
+
+            optimizer.step()
+            optimizer.zero_grad()
 
 # %%
 
