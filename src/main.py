@@ -1,15 +1,7 @@
 #%%
-from numpy.lib.function_base import gradient
-import torch, torchvision
+import torch, torchvision, kornia, tqdm, random, wandb, einops
 import matplotlib.pyplot as plt
-import kornia
 from kornia import tensor_to_image as t2i
-import tqdm
-import random
-import wandb
-
-wandb.login()
-
 
 from src.utils import (
     InputImageLayer,
@@ -26,82 +18,91 @@ from src.debug import (
     pixel_sample_ratio_map,
 )
 
-IMG_SIZE = 224
-NET_INPUT_SIZE = 224
+wandb.login()
+config = {
+    "IMG_SIZE": 512,
+    "NET_INPUT_SIZE": 224,
+    "NETWORKS": [
+        # "resnet18",
+        "mixnet_s",
+    ],
+    "LEARNING_RATE": 0.025,
+    "ITERATIONS": 20000,
+    "BATCH_SIZE": 16,
+    "CLASSES": [
+        318,
+        512,
+        4,
+    ],
+}
 
-input_img_layer = InputImageLayer(
-    shape=[3, IMG_SIZE, IMG_SIZE],
-    param_fn=torch.nn.Sequential(
-        torch.nn.Sigmoid(),
-    ),
-).cuda()
+with wandb.init(project="vis", config=config):
+    cfg = wandb.config
 
-aug_fn = torch.nn.Sequential(
-    RandomCircularShift(),
-    kornia.augmentation.RandomRotation(
-        degrees=30,
-        same_on_batch=False,
-        p=1,
-    ),
-    kornia.augmentation.RandomResizedCrop(
-        size=(224, 224),
-        scale=(1, 1),
-        ratio=(1, 1),  # aspect ratio
-        same_on_batch=False,
-    ),
-    # kornia.augmentation.RandomPerspective(
-    #     distortion_scale=0.5,
-    #     p=1,
-    #     same_on_batch=False,
-    # ),
-    # kornia.augmentation.RandomHorizontalFlip(),
-    # kornia.augmentation.RandomVerticalFlip(),
-)
+    input_img_layer = InputImageLayer(
+        img_classes=cfg.CLASSES,
+        img_shape=[3, cfg.IMG_SIZE, cfg.IMG_SIZE],
+        param_fn=torch.nn.Sequential(
+            torch.nn.Sigmoid(),
+        ),
+    ).cuda()
 
+    aug_fn = torch.nn.Sequential(
+        RandomCircularShift(),
+        kornia.augmentation.RandomRotation(
+            degrees=30,
+            same_on_batch=False,
+            p=1,
+        ),
+        kornia.augmentation.RandomResizedCrop(
+            size=(cfg.NET_INPUT_SIZE, cfg.NET_INPUT_SIZE),
+            scale=(0.1, 1),
+            ratio=(0.5, 2),  # aspect ratio
+            same_on_batch=False,
+        ),
+        # kornia.augmentation.RandomPerspective(
+        #     distortion_scale=0.5,
+        #     p=1,
+        #     same_on_batch=False,
+        # ),
+        # kornia.augmentation.RandomHorizontalFlip(),
+        # kornia.augmentation.RandomVerticalFlip(),
+    )
+    mixup = kornia.augmentation.RandomMixUp()
 
-network_names = [
-    # "densenet121",  # good
-    "resnet18",  # good
-    # "efficientnet_b4",  # bad
-    # "inception_v4",  # good
-    # "vit_base_patch16_224",  # meh
-]
+    networks = get_timm_networks(cfg.NETWORKS)
+    optimizer = torch.optim.Adam(input_img_layer.parameters(), lr=cfg.LEARNING_RATE)
 
-networks = get_timm_networks(network_names)
-optimizer = torch.optim.Adam(input_img_layer.parameters(), lr=0.05)
+    #%% train
+    wandb.watch(input_img_layer, log="all", log_freq=10)
+    for n in tqdm.tqdm(range(cfg.ITERATIONS)):
+        net = random.choice(networks)
+        input_imgs, input_labels = input_img_layer(cfg.BATCH_SIZE)
+        # input_imgs = einops.repeat(input_img, "c h w -> b c h w", b=cfg.BATCH_SIZE)
+        aug_imgs = aug_fn(input_imgs)
+        out = net(aug_imgs)
 
+        # loss=5
 
-#%% train
-with wandb.init(project="vis"):
-    wandb.watch(input_img_layer, log="all", log_freq=1)
-    ITERATIONS = 5000
-    BATCH_SIZE = 1
-    for TARGET_CLASS in [309]:
-        for n in tqdm.tqdm(range(ITERATIONS)):
-            net = random.choice(networks)
-            input_imgs = input_img_layer(BATCH_SIZE)
-            aug_imgs = aug_fn(input_imgs)
-            out = net(aug_imgs)
+        loss.backward()
+        if n % 50 == 0:
+            wandb.log(
+                {
+                    "loss": loss,
+                    "tensor_max_value": input_img_layer.input_tensor.max(),
+                    "tensor_min_value": input_img_layer.input_tensor.min(),
+                    "image_max_value": input_img_layer().max(),
+                    "image_min_value": input_img_layer().min(),
+                },
+                step=n,
+            )
+        if n % 500 == 0:
+            wandb.log(
+                {
+                    "image": wandb.Image(input_img_layer()),
+                },
+                step=n,
+            )
 
-            prob_loss = probability_maximizer_loss(out, TARGET_CLASS)
-            score_loss = score_maximizer_loss(out, TARGET_CLASS)
-            loss = prob_loss
-            loss.backward()
-
-            wandb.log({"loss": loss})
-
-            optimizer.step()
-            optimizer.zero_grad()
-
-# %%
-
-plt.figure(figsize=[10, 10])
-
-plt.imshow(t2i(input_img_layer(1)))
-plt.show()
-# %%
-with torch.no_grad():
-    input_imgs = input_img_layer(32)
-    aug_imgs = aug_fn(input_imgs)
-    out = net(aug_imgs)
-    probs = torch.softmax(out, dim=-1)
+        optimizer.step()
+        optimizer.zero_grad()

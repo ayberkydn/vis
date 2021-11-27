@@ -8,6 +8,7 @@ from timm.data import resolve_data_config
 import torch
 import torchvision
 import logging
+import random
 
 
 def imagenet_class_name_of(n: int) -> str:
@@ -89,27 +90,31 @@ class RandomCircularShift(torch.nn.Module):
 
 
 class InputImageLayer(torch.nn.Module):
-    def __init__(self, shape, param_fn=None):
+    def __init__(self, img_shape, img_classes, param_fn=None):
 
         super().__init__()
-
+        self.img_classes = torch.tensor(img_classes)
         if param_fn == None:
-            self.param_fn = torch.Identity()
-
+            print("paramfn is none")
+            self.param_fn = torch.nn.Identity()
         else:
             self.param_fn = param_fn
 
         self.input_tensor = torch.nn.Parameter(
-            torch.zeros(shape),
+            torch.zeros(len(img_classes), *img_shape),
             requires_grad=True,
         )
-        self.param_fn = param_fn
 
-    def forward(self, batch_size):
-        batch = einops.repeat(
-            self.input_tensor,
-            "c h w -> b c h w",
-            b=batch_size,
-        )
+    def forward(self, batch_size=None):
+        if batch_size == None:
+            indices = range(len(self.img_classes))
+        else:
+            indices = [
+                random.randint(0, len(self.img_classes) - 1) for n in range(batch_size)
+            ]
+        return self.param_fn(self.input_tensor[indices]), self.img_classes[indices]
 
-        return self.param_fn(batch)
+
+#%%
+a = InputImageLayer([3, 512, 512], [1, 2, 3, 5])
+b = a(25)
