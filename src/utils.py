@@ -1,4 +1,5 @@
 import copy
+from math import inf
 
 import einops
 import kornia
@@ -9,6 +10,7 @@ import torch
 import torchvision
 import logging
 import random
+from torch.utils.data import Dataset, DataLoader
 
 
 def imagenet_class_name_of(n: int) -> str:
@@ -89,32 +91,67 @@ class RandomCircularShift(torch.nn.Module):
         return kornia.augmentation.RandomCrop(size=[H, W])(img_torus)
 
 
+def mixup_criterion(y_a, y_b, lam):
+    return lambda criterion, pred: lam * criterion(pred, y_a) + (1 - lam) * criterion(
+        pred, y_b
+    )
+
+
+class DummyDataset(Dataset):
+    def __init__(self):
+        super().__init__()
+
+    def __len__(self):
+        return int(1000)
+
+    def __getitem__(self, index):
+        return "THIS IS WHAT YOU GET"
+
+
 class InputImageLayer(torch.nn.Module):
-    def __init__(self, img_shape, img_classes, param_fn=None):
+    def __init__(self, img_shape, img_class, param_fn, aug_fn=None):
 
         super().__init__()
-        self.img_classes = torch.tensor(img_classes)
-        if param_fn == None:
-            print("paramfn is none")
-            self.param_fn = torch.nn.Identity()
+        self.aug_fn = aug_fn
+
+        if param_fn == "sigmoid":
+            self.input_tensor = torch.nn.Parameter(torch.randn(*img_shape) * 0.0)
+            self.param_fn = torch.nn.Sigmoid()
+
+        elif param_fn == "clip":
+            self.input_tensor = torch.nn.Parameter(torch.randn(*img_shape) * 0.0 + 0.5)
+            self.param_fn = lambda x: torch.clip(x, 0, 1)
+
+        elif param_fn == "scale":
+            self.input_tensor = torch.nn.Parameter(torch.rand(*img_shape))
+
+            def scale(x):
+                x = x - x.min()
+                x = x / x.max()
+                return x
+
+            self.param_fn = scale
+
+        elif param_fn == "sin":
+            self.input_tensor = torch.nn.Parameter(torch.randn(*img_shape) * 0.0)
+            self.param_fn = lambda x: torch.sin(x) / 2 + 0.5
+
         else:
-            self.param_fn = param_fn
+            raise Exception("Invalid param_fn")
 
-        self.input_tensor = torch.nn.Parameter(
-            torch.zeros(len(img_classes), *img_shape),
-            requires_grad=True,
-        )
+    def forward(self, batch_size, augment=True):
+        img = self.param_fn(self.input_tensor)
+        imgs = einops.repeat(img, "c h w -> b c h w", b=batch_size)
+        if self.aug_fn:
+            imgs = self.aug_fn(imgs)
 
-    def forward(self, batch_size=None):
-        if batch_size == None:
-            indices = range(len(self.img_classes))
-        else:
-            indices = [
-                random.randint(0, len(self.img_classes) - 1) for n in range(batch_size)
-            ]
-        return self.param_fn(self.input_tensor[indices]), self.img_classes[indices]
+        return imgs
 
-
-#%%
-a = InputImageLayer([3, 512, 512], [1, 2, 3, 5])
-b = a(25)
+    def get_image(self, uint=False):
+        with torch.no_grad():
+            img_np = kornia.tensor_to_image(self.param_fn(self.input_tensor))
+            if uint == True:
+                scaled_img_np = img_np * 255
+                return scaled_img_np.astype(int)
+            else:
+                return img_np
