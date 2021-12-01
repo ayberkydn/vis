@@ -46,7 +46,7 @@ cfg = TrainConfig(
         "inception_v3",
         # "resnet50",
     ],
-    LEARNING_RATE=0.02,
+    LEARNING_RATE=0.01,
     ITERATIONS=100000,
     BATCH_SIZE=8,
     CLASS=309,
