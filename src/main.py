@@ -1,5 +1,5 @@
 #%%
-import torch, torchvision, kornia, tqdm, random, wandb, einops
+import torch, torchvision, kornia, tqdm, random, wandb, einops, argparse
 import matplotlib.pyplot as plt
 from dataclasses import dataclass
 import os, sys
@@ -20,40 +20,27 @@ from debug import (
     pixel_sample_ratio_map,
 )
 
-wandb.login()
 
+parser = argparse.ArgumentParser()
 
-@dataclass
-class TrainConfig:
-    GPU: int
-    IMG_SIZE: int
-    NET_INPUT_SIZE: int
-    NETWORKS: str
-    LEARNING_RATE: float
-    ITERATIONS: int
-    BATCH_SIZE: int
-    CLASS: int
-    LOG_FREQUENCY: int
-    PARAM_FN: str
+parser.add_argument("--IMG_SIZE", type=int, default=512)
+parser.add_argument("--NET_INPUT_SIZE", type=int, default=224)
+parser.add_argument("--LEARNING_RATE", type=float, default=0.01)
+parser.add_argument("--ITERATIONS", type=int, default=1000000)
+parser.add_argument("--BATCH_SIZE", type=int, default=32)
+parser.add_argument("--CLASS", type=int, default=309)
+parser.add_argument("--LOG_FREQUENCY", type=int, default=500)
+parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
 
-
-cfg = TrainConfig(
-    GPU=2,
-    IMG_SIZE=512,
-    NET_INPUT_SIZE=224,
-    NETWORKS=[
-        # "densenet121",
+parser.add_argument(
+    "--NETWORKS",
+    type=list,
+    default=[
         "inception_v3",
-        # "resnet50",
     ],
-    LEARNING_RATE=0.01,
-    ITERATIONS=100000,
-    BATCH_SIZE=32,
-    CLASS=309,
-    LOG_FREQUENCY=500,
-    PARAM_FN="sigmoid",
 )
-################################################################################
+cfg = parser.parse_args()
+#%%
 
 aug_fn = torch.nn.Sequential(
     RandomCircularShift(),
@@ -93,6 +80,8 @@ optimizer = torch.optim.Adam(
     lr=cfg.LEARNING_RATE,
 )
 
+
+wandb.login()
 with wandb.init(project="vis", config=cfg):
     wandb.watch(input_img_layer, log="all", log_freq=cfg.LOG_FREQUENCY)
 
