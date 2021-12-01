@@ -48,14 +48,12 @@ cfg = TrainConfig(
     ],
     LEARNING_RATE=0.01,
     ITERATIONS=100000,
-    BATCH_SIZE=8,
+    BATCH_SIZE=32,
     CLASS=309,
-    LOG_FREQUENCY=100,
-    PARAM_FN="sin",
+    LOG_FREQUENCY=500,
+    PARAM_FN="sigmoid",
 )
 ################################################################################
-
-torch.cuda.device(cfg.GPU)
 
 aug_fn = torch.nn.Sequential(
     RandomCircularShift(),
