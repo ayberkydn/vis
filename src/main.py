@@ -1,12 +1,26 @@
 #%%
-import torch, torchvision, kornia, tqdm, random, wandb, einops, argparse
+import argparse
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument("--IMG_SIZE", type=int, default=512)
+parser.add_argument("--NET_INPUT_SIZE", type=int, default=224)
+parser.add_argument("--LEARNING_RATE", type=float, default=0.01)
+parser.add_argument("--ITERATIONS", type=int, default=10000)
+parser.add_argument("--BATCH_SIZE", type=int, default=16)
+parser.add_argument("--CLASS", type=int, default=309)
+parser.add_argument("--LOG_FREQUENCY", type=int, default=100)
+parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
+
+parser.add_argument("--NETWORK", type=str, default="vgg19_bn")
+#%%
+import torch, torchvision, kornia, tqdm, random, wandb, einops
 import matplotlib.pyplot as plt
-from dataclasses import dataclass
 import os, sys
 
 from utils import (
     InputImageLayer,
-    get_timm_networks,
+    get_timm_network,
     mixup_criterion,
     probability_maximizer_loss,
     score_maximizer_loss,
@@ -20,77 +34,68 @@ from debug import (
     pixel_sample_ratio_map,
 )
 
-
-parser = argparse.ArgumentParser()
-
-parser.add_argument("--IMG_SIZE", type=int, default=512)
-parser.add_argument("--NET_INPUT_SIZE", type=int, default=224)
-parser.add_argument("--LEARNING_RATE", type=float, default=0.01)
-parser.add_argument("--ITERATIONS", type=int, default=1000000)
-parser.add_argument("--BATCH_SIZE", type=int, default=32)
-parser.add_argument("--CLASS", type=int, default=309)
-parser.add_argument("--LOG_FREQUENCY", type=int, default=500)
-parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
-
-parser.add_argument(
-    "--NETWORKS",
-    type=list,
-    default=[
-        "inception_v3",
-    ],
-)
-cfg = parser.parse_args()
 #%%
-
-aug_fn = torch.nn.Sequential(
-    RandomCircularShift(),
-    kornia.augmentation.RandomRotation(
-        degrees=180,
-        same_on_batch=False,
-        p=1,
-    ),
-    kornia.augmentation.RandomResizedCrop(
-        size=(cfg.NET_INPUT_SIZE, cfg.NET_INPUT_SIZE),
-        scale=(
-            cfg.NET_INPUT_SIZE / cfg.IMG_SIZE,
-            cfg.IMG_SIZE,
-        ),
-        ratio=(1, 1),  # aspect ratio
-        same_on_batch=False,
-    ),
-    kornia.augmentation.RandomPerspective(
-        distortion_scale=0.5,
-        p=1,
-        same_on_batch=False,
-    ),
-    kornia.augmentation.RandomHorizontalFlip(),
-    kornia.augmentation.RandomVerticalFlip(),
-)
-
-networks = get_timm_networks(cfg.NETWORKS)
-input_img_layer = InputImageLayer(
-    img_class=cfg.CLASS,
-    img_shape=[3, cfg.IMG_SIZE, cfg.IMG_SIZE],
-    param_fn=cfg.PARAM_FN,
-    aug_fn=aug_fn,
-).cuda()
-
-optimizer = torch.optim.Adam(
-    input_img_layer.parameters(),
-    lr=cfg.LEARNING_RATE,
-)
-
-
+args = parser.parse_args(args=[])
 wandb.login()
-with wandb.init(project="vis", config=cfg):
+with wandb.init(project="vis", config=args, mode="online") as run:
+    cfg = wandb.config
+    aug_fn = torch.nn.Sequential(
+        RandomCircularShift(),
+        kornia.augmentation.RandomRotation(
+            degrees=180,
+            same_on_batch=False,
+            p=1,
+        ),
+        kornia.augmentation.RandomResizedCrop(
+            size=(cfg.NET_INPUT_SIZE, cfg.NET_INPUT_SIZE),
+            scale=(
+                cfg.NET_INPUT_SIZE / cfg.IMG_SIZE,
+                cfg.IMG_SIZE,
+            ),
+            ratio=(1, 1),  # aspect ratio
+            same_on_batch=False,
+        ),
+        kornia.augmentation.RandomPerspective(
+            distortion_scale=0.5,
+            p=1,
+            same_on_batch=False,
+        ),
+        kornia.augmentation.RandomHorizontalFlip(),
+        kornia.augmentation.RandomVerticalFlip(),
+    )
+
+    net = get_timm_network(cfg.NETWORK)
+    input_img_layer = InputImageLayer(
+        img_class=cfg.CLASS,
+        img_shape=[3, cfg.IMG_SIZE, cfg.IMG_SIZE],
+        param_fn=cfg.PARAM_FN,
+        aug_fn=aug_fn,
+    ).cuda()
+
+    optimizer = torch.optim.Adam(
+        input_img_layer.parameters(),
+        lr=cfg.LEARNING_RATE,
+    )
+
+    # with wandb.init(project="vis", config=cfg, mode="disabled"):
     wandb.watch(input_img_layer, log="all", log_freq=cfg.LOG_FREQUENCY)
 
     for n in tqdm.tqdm(range(cfg.ITERATIONS)):
         optimizer.zero_grad()
-        net = random.choice(networks)
         imgs = input_img_layer(cfg.BATCH_SIZE)
-        logits = net(imgs)
-        loss = score_maximizer_loss(logits, cfg.CLASS)
+        logits, activations = net(imgs)
+
+        bn_activations = list(
+            filter(lambda x: isinstance(x["module"], torch.nn.BatchNorm2d), activations)
+        )
+        conv_activations = list(
+            filter(lambda x: isinstance(x["module"], torch.nn.Conv2d), activations)
+        )
+
+        specific_act = conv_activations[11]["output"][:, 8, :, :]
+        loss = -specific_act.mean()
+
+        # loss = score_maximizer_loss(logits, cfg.CLASS)
         loss.backward()
         optimizer.step()
 

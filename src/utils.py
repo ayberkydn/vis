@@ -6,6 +6,7 @@ import kornia
 import matplotlib.pyplot as plt
 import timm
 from timm.data import resolve_data_config
+from timm.models.layers import activations
 import torch
 import torchvision
 import logging
@@ -19,42 +20,38 @@ def imagenet_class_name_of(n: int) -> str:
     return labels[n]
 
 
-def get_timm_networks(network_name_list):
+def get_timm_network(name):
     """
     - Creates networks, moves to cuda, disables parameter grads and set eval mode.
     - Merges the necessary normalization preprocessing with the networks
     - Returns the list of networks
     """
-    networks = []
-    for name in network_name_list:
-        network = timm.create_model(name, pretrained=True).eval().cuda()
-        config = resolve_data_config({}, model=network)
+    network = timm.create_model(name, pretrained=True).eval().cuda()
+    config = resolve_data_config({}, model=network)
 
-        for param in network.parameters():
-            param.requires_grad = False
+    for param in network.parameters():
+        param.requires_grad = False
 
-        input_size = config["input_size"][-2:]
-        mean = config["mean"]
-        std = config["std"]
+    input_size = config["input_size"][-2:]
+    mean = config["mean"]
+    std = config["std"]
 
-        logging.info(f"Network name: {name}")
-        logging.info(f"Mean: {mean}")
-        logging.info(f"Std: {std}")
-        logging.info(f"Input size: {input_size}")
+    logging.info(f"Network name: {name}")
+    logging.info(f"Mean: {mean}")
+    logging.info(f"Std: {std}")
+    logging.info(f"Input size: {input_size}")
 
-        preprocess = torch.nn.Sequential(
-            torchvision.transforms.Resize(input_size),
-            torchvision.transforms.Normalize(mean, std),
-        )
+    preprocess = torch.nn.Sequential(
+        torchvision.transforms.Resize(input_size),
+        torchvision.transforms.Normalize(mean, std),
+    )
 
-        pre_and_net = torch.nn.Sequential(
-            preprocess,
-            network,
-        )
+    pre_and_net = torch.nn.Sequential(
+        preprocess,
+        network,
+    )
 
-        networks.append(pre_and_net)
-
-    return networks
+    return VerboseModelWrapper(pre_and_net)
 
 
 def score_maximizer_loss(x, target_class):
@@ -105,7 +102,7 @@ class DummyDataset(Dataset):
         return int(1000)
 
     def __getitem__(self, index):
-        return "THIS IS WHAT YOU GET"
+        return "THIS IS WHAT YOU GET EVERY TIME"
 
 
 class InputImageLayer(torch.nn.Module):
@@ -155,3 +152,44 @@ class InputImageLayer(torch.nn.Module):
                 return scaled_img_np.astype(int)
             else:
                 return img_np
+
+
+class VerboseModelWrapper(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+        self.activations = []
+        self.submodule_names = [name for name, layer in self.model.named_modules()]
+
+        def create_hook(name):
+            def hook(module, inputs, output):
+                self.activations.append(
+                    {
+                        "name": name,
+                        "module": module,
+                        "output": output,
+                    }
+                )
+
+            return hook
+
+        for name, layer in self.model.named_modules():
+            layer.register_forward_hook(create_hook(name))
+
+    def forward(self, x):
+        self.activations = []
+        outputs, activations = self.model(x), self.activations
+        return outputs, activations
+
+    def get_submodule_names(self):
+        return self.submodule_names
+
+
+net = timm.create_model("vgg11_bn")
+net = VerboseModelWrapper(net)
+input = torch.rand(1, 3, 224, 224)
+out, activations = net(input)
+
+bn_activations = [
+    act for act in activations if isinstance(act["module"], torch.nn.BatchNorm2d)
+]
