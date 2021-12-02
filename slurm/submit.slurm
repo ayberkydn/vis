@@ -8,7 +8,10 @@
 #SBATCH -N 1                         # Gorev kac node'da calisacak?
 #SBATCH -n 1                         # Ayni gorevden kac adet calistirilacak?
 #SBATCH --cpus-per-task 16           # Her bir gorev kac cekirdek kullanacak? Kumeleri kontrol edin.
-#SBATCH --time=0-16:00:00               # Sure siniri koyun.
+#SBATCH --time=00:00:10               # Sure siniri koyun.
 
 # NVIDIA GPU kullanmak icin --nv opsiyonunu kullanin.
-singularity run --nv deep-learning_latest.sif python src/main.py
+
+# singularity run --nv deep-learning_latest.sif python src/main.py
+conda init
+echo okay

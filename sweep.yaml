@@ -5,12 +5,10 @@ method: grid
 parameters:
   LEARNING_RATE:
     values:
-      - 0.01
-      - 0.001
       - 0.1
   ITERATIONS:
     values:
-      - 100
+      - 10000
   PARAM_FN:
     values:
       - clip
