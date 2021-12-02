@@ -167,13 +167,14 @@ class VerboseModelWrapper(torch.nn.Module):
                     {
                         "name": name,
                         "module": module,
-                        "output": output,
+                        "output": output.mean(dim=0),
                     }
                 )
 
             return hook
 
         for name, layer in self.model.named_modules():
+            # if isinstance(layer, torch.nn.Conv2d):
             layer.register_forward_hook(create_hook(name))
 
     def forward(self, x):

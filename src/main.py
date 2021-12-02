@@ -5,9 +5,9 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("--IMG_SIZE", type=int, default=512)
 parser.add_argument("--NET_INPUT_SIZE", type=int, default=224)
-parser.add_argument("--LEARNING_RATE", type=float, default=0.01)
-parser.add_argument("--ITERATIONS", type=int, default=10000)
-parser.add_argument("--BATCH_SIZE", type=int, default=16)
+parser.add_argument("--LEARNING_RATE", type=float, default=0.1)
+parser.add_argument("--ITERATIONS", type=int, default=5000)
+parser.add_argument("--BATCH_SIZE", type=int, default=32)
 parser.add_argument("--CLASS", type=int, default=309)
 parser.add_argument("--LOG_FREQUENCY", type=int, default=100)
 parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
@@ -72,9 +72,15 @@ with wandb.init(project="vis", config=args, mode="online") as run:
         aug_fn=aug_fn,
     ).cuda()
 
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.RAdam(
         input_img_layer.parameters(),
         lr=cfg.LEARNING_RATE,
+    )
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer=optimizer,
+        factor=0.9,
+        patience=10,
+        threshold=1e-4,
     )
 
     # with wandb.init(project="vis", config=cfg, mode="disabled"):
@@ -92,11 +98,12 @@ with wandb.init(project="vis", config=args, mode="online") as run:
             filter(lambda x: isinstance(x["module"], torch.nn.Conv2d), activations)
         )
 
-        specific_act = conv_activations[11]["output"][:, 8, :, :]
+        specific_act = conv_activations[11]["output"][8]
         loss = -specific_act.mean()
 
         # loss = score_maximizer_loss(logits, cfg.CLASS)
         loss.backward()
+        scheduler.step(loss)
         optimizer.step()
 
         if n % cfg.LOG_FREQUENCY == 0:
@@ -105,6 +112,7 @@ with wandb.init(project="vis", config=args, mode="online") as run:
             wandb.log(
                 {
                     "loss": loss,
+                    "lr": scheduler._last_lr[0],
                     "tensor_max_value": tensor.max(),
                     "tensor_min_value": tensor.min(),
                     "image_max_value": img.max(),
