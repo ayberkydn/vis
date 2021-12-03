@@ -1,17 +1,13 @@
 program: src/main.py
 entity: ayberkydn
-project: some-vis-thingsweep
+project: maximize-all-classes
 method: grid
 parameters:
-  LEARNING_RATE:
-    values:
-      - 0.1
   ITERATIONS:
+    value: 5000
+  CLASS:
+    values: [1-100]
+  LOSS_FN:
     values:
-      - 10000
-  PARAM_FN:
-    values:
-      - clip
-      - sigmoid
-      - scale
-      - sin
+      - probability
+      - score
