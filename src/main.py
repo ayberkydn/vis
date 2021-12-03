@@ -12,7 +12,7 @@ parser.add_argument("--CLASS", type=int, default=309)
 parser.add_argument("--LOG_FREQUENCY", type=int, default=100)
 parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
 
-parser.add_argument("--NETWORK", type=str, default="vgg19_bn")
+parser.add_argument("--NETWORK", type=str, default="vgg11_bn")
 #%%
 import torch, torchvision, kornia, tqdm, random, wandb, einops
 import matplotlib.pyplot as plt
@@ -35,9 +35,12 @@ from debug import (
 )
 
 #%%
+
+torch.backends.cudnn.benchmark = True
 args = parser.parse_args(args=[])
 wandb.login()
-with wandb.init(project="vis", config=args, mode="online") as run:
+with wandb.init(project="vis", config=args, mode="disabled") as run:
+    # with wandb.init(project="vis", config=args, mode="online") as run:
     cfg = wandb.config
     aug_fn = torch.nn.Sequential(
         RandomCircularShift(),
@@ -78,7 +81,7 @@ with wandb.init(project="vis", config=args, mode="online") as run:
     )
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer=optimizer,
-        factor=0.9,
+        factor=0.99,
         patience=10,
         threshold=1e-4,
     )
@@ -87,7 +90,7 @@ with wandb.init(project="vis", config=args, mode="online") as run:
     wandb.watch(input_img_layer, log="all", log_freq=cfg.LOG_FREQUENCY)
 
     for n in tqdm.tqdm(range(cfg.ITERATIONS)):
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
         imgs = input_img_layer(cfg.BATCH_SIZE)
         logits, activations = net(imgs)
 
@@ -98,7 +101,7 @@ with wandb.init(project="vis", config=args, mode="online") as run:
             filter(lambda x: isinstance(x["module"], torch.nn.Conv2d), activations)
         )
 
-        specific_act = conv_activations[11]["output"][8]
+        specific_act = conv_activations[5]["output"][8]
         loss = -specific_act.mean()
 
         # loss = score_maximizer_loss(logits, cfg.CLASS)
@@ -129,3 +132,5 @@ with wandb.init(project="vis", config=args, mode="online") as run:
                 },
                 step=n,
             )
+
+# %%
