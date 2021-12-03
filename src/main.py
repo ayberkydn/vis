@@ -38,31 +38,30 @@ from debug import (
 
 torch.backends.cudnn.benchmark = True
 args = parser.parse_args(args=[])
-wandb.login()
 with wandb.init(project="vis", config=args, mode="disabled") as run:
     # with wandb.init(project="vis", config=args, mode="online") as run:
     cfg = wandb.config
     aug_fn = torch.nn.Sequential(
         RandomCircularShift(),
-        kornia.augmentation.RandomRotation(
-            degrees=180,
-            same_on_batch=False,
-            p=1,
-        ),
+        # kornia.augmentation.RandomRotation(
+        #     degrees=180,
+        #     same_on_batch=False,
+        #     p=1,
+        # ),
         kornia.augmentation.RandomResizedCrop(
             size=(cfg.NET_INPUT_SIZE, cfg.NET_INPUT_SIZE),
             scale=(
                 cfg.NET_INPUT_SIZE / cfg.IMG_SIZE,
-                cfg.IMG_SIZE,
+                1,
             ),
             ratio=(1, 1),  # aspect ratio
             same_on_batch=False,
         ),
-        kornia.augmentation.RandomPerspective(
-            distortion_scale=0.5,
-            p=1,
-            same_on_batch=False,
-        ),
+        # kornia.augmentation.RandomPerspective(
+        #     distortion_scale=0.5,
+        #     p=1,
+        #     same_on_batch=False,
+        # ),
         kornia.augmentation.RandomHorizontalFlip(),
         kornia.augmentation.RandomVerticalFlip(),
     )
@@ -86,7 +85,6 @@ with wandb.init(project="vis", config=args, mode="disabled") as run:
         threshold=1e-4,
     )
 
-    # with wandb.init(project="vis", config=cfg, mode="disabled"):
     wandb.watch(input_img_layer, log="all", log_freq=cfg.LOG_FREQUENCY)
 
     for n in tqdm.tqdm(range(cfg.ITERATIONS)):
@@ -101,10 +99,10 @@ with wandb.init(project="vis", config=args, mode="disabled") as run:
             filter(lambda x: isinstance(x["module"], torch.nn.Conv2d), activations)
         )
 
-        specific_act = conv_activations[5]["output"][8]
-        loss = -specific_act.mean()
+        # specific_act = conv_activations[5]["output"][8]
+        # loss = -specific_act.mean()
 
-        # loss = score_maximizer_loss(logits, cfg.CLASS)
+        loss = probability_maximizer_loss(logits, cfg.CLASS)
         loss.backward()
         scheduler.step(loss)
         optimizer.step()

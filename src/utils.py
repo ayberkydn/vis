@@ -82,10 +82,14 @@ class RandomCircularShift(torch.nn.Module):
         H = x.shape[-2]
         W = x.shape[-1]
 
-        img_width_expand = torch.cat([x] * 2, dim=-1)
-        img_torus = torch.cat([img_width_expand] * 2, dim=-2)
+        shift_H = random.randint(0, H - 1)
+        shift_W = random.randint(0, W - 1)
+        shifted_img = torch.roll(x, shifts=(shift_H, shift_W), dims=(-2, -1))
+        return shifted_img
+        # img_width_expand = torch.cat([x] * 2, dim=-1)
+        # img_torus = torch.cat([img_width_expand] * 2, dim=-2)
 
-        return kornia.augmentation.RandomCrop(size=[H, W])(img_torus)
+        # return kornia.augmentation.RandomCrop(size=[H, W])(img_torus)
 
 
 def mixup_criterion(y_a, y_b, lam):
