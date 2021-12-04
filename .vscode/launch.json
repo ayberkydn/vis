@@ -9,6 +9,9 @@
       "type": "python",
       "request": "launch",
       "program": "${file}",
+      "env": {
+        "WANDB_MODE": "offline"
+      },
       "console": "integratedTerminal"
     }
   ]

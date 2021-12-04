@@ -1,3 +1,3 @@
 import timm
 
-print(timm.list_models("resnet*", pretrained=True))
+print(timm.list_models("*dense*", pretrained=True))

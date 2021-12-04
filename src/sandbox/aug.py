@@ -7,7 +7,22 @@ import torchvision
 import matplotlib.pyplot as plt
 
 
-aug = kornia.augmentation.RandomPerspective(distortion_scale=1, p=1)
+class RollWrapper(torch.nn.Module):
+    def __init__(self, aug):
+        super().__init__()
+        self.aug = aug
+
+    def forward(self, x):
+
+        H = x.shape[-2]
+        W = x.shape[-1]
+
+        repeated_img = x.repeat(1, 1, 3, 3)
+        aug_img = self.aug(repeated_img)
+        return kornia.augmentation.CenterCrop(size=(H, W))(aug_img)
+
+
+aug = RollWrapper(kornia.augmentation.RandomRotation(degrees=180, p=1))
 to_tensor = torchvision.transforms.ToTensor()
 
 img = to_tensor(PIL.Image.open("../../sample.jpeg")).unsqueeze(0)

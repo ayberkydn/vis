@@ -12,6 +12,7 @@ import torchvision
 import logging
 import random
 from torch.utils.data import Dataset, DataLoader
+from torchvision.transforms.functional import center_crop
 
 
 def imagenet_class_name_of(n: int) -> str:
@@ -51,19 +52,38 @@ def get_timm_network(name):
         network,
     )
 
-    return VerboseModelWrapper(pre_and_net)
+    return BNStatsModelWrapper(pre_and_net)
 
 
-def score_maximizer_loss(x, target_class):
-    return -x[:, target_class].mean()
+def score_maximizer_loss(logits, target_classes):
+    return -logits[:, target_classes].mean()
 
 
-def probability_maximizer_loss(x, target_class):
-    b = x.shape[0]
-    dev = x.device
+def probability_maximizer_loss(logits, target_classes):
+    b = logits.shape[0]
+    dev = logits.device
 
-    target = torch.ones(size=[b], dtype=torch.long, device=x.device) * target_class
-    return torch.nn.CrossEntropyLoss()(x, target)
+    target = (
+        torch.ones(size=[b], dtype=torch.long, device=logits.device) * target_classes
+    )
+    return torch.nn.CrossEntropyLoss()(logits, target)
+
+
+def bn_stats_loss(activations):
+    losses = []
+    for act_n in range(len(activations)):
+        act_mean = activations[act_n]["inputs_mean"]
+        act_var = activations[act_n]["inputs_var"] + 1e-8
+        running_mean = activations[act_n]["module"].running_mean
+        running_var = activations[act_n]["module"].running_var
+
+        loss_n = torch.log(torch.sqrt(act_var) / torch.sqrt(running_var)) - 0.5 * (
+            1 - ((running_var + torch.square(act_mean - running_mean)) / act_var)
+        )
+        losses.append(loss_n.mean())
+
+    loss = torch.mean(torch.stack(losses))
+    return loss
 
 
 def add_noise(network, factor):
@@ -86,10 +106,6 @@ class RandomCircularShift(torch.nn.Module):
         shift_W = random.randint(0, W - 1)
         shifted_img = torch.roll(x, shifts=(shift_H, shift_W), dims=(-2, -1))
         return shifted_img
-        # img_width_expand = torch.cat([x] * 2, dim=-1)
-        # img_torus = torch.cat([img_width_expand] * 2, dim=-2)
-
-        # return kornia.augmentation.RandomCrop(size=[H, W])(img_torus)
 
 
 def mixup_criterion(y_a, y_b, lam):
@@ -158,43 +174,43 @@ class InputImageLayer(torch.nn.Module):
                 return img_np
 
 
-class VerboseModelWrapper(torch.nn.Module):
+class BNStatsModelWrapper(torch.nn.Module):
     def __init__(self, model):
         super().__init__()
         self.model = model
-        self.activations = []
+        self.bn_stats = []
         self.submodule_names = [name for name, layer in self.model.named_modules()]
 
         def create_hook(name):
-            def hook(module, inputs, output):
-                self.activations.append(
+            def hook(module, inputs, outputs):
+                assert len(inputs) == 1
+                self.bn_stats.append(
                     {
                         "name": name,
                         "module": module,
-                        "output": output.mean(dim=0),
+                        "inputs_mean": inputs[0].mean(dim=[0, -1, -2]),
+                        "inputs_var": inputs[0].var(dim=[0, -1, -2]),
                     }
                 )
 
             return hook
 
         for name, layer in self.model.named_modules():
-            # if isinstance(layer, torch.nn.Conv2d):
-            layer.register_forward_hook(create_hook(name))
+            if isinstance(layer, torch.nn.BatchNorm2d):
+                layer.register_forward_hook(create_hook(name))
 
     def forward(self, x):
-        self.activations = []
-        outputs, activations = self.model(x), self.activations
+        self.bn_stats = []
+        outputs, activations = self.model(x), self.bn_stats
         return outputs, activations
 
-    def get_submodule_names(self):
-        return self.submodule_names
 
+if __name__ == "__main__":
+    net = timm.create_model("vgg11_bn")
+    net = BNStatsModelWrapper(net)
+    input = torch.rand(1, 3, 224, 224)
+    out, activations = net(input)
 
-net = timm.create_model("vgg11_bn")
-net = VerboseModelWrapper(net)
-input = torch.rand(1, 3, 224, 224)
-out, activations = net(input)
-
-bn_activations = [
-    act for act in activations if isinstance(act["module"], torch.nn.BatchNorm2d)
-]
+    bn_activations = [
+        act for act in activations if isinstance(act["module"], torch.nn.BatchNorm2d)
+    ]
