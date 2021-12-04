@@ -7,16 +7,16 @@ parser.add_argument("--IMG_SIZE", type=int, default=512)
 parser.add_argument("--NET_INPUT_SIZE", type=int, default=224)
 parser.add_argument("--LEARNING_RATE", type=float, default=0.1)
 parser.add_argument("--ITERATIONS", type=int, default=5000)
-parser.add_argument("--BATCH_SIZE", type=int, default=64)
-parser.add_argument("--CLASS", type=int, default=309)
+parser.add_argument("--BATCH_SIZE", type=int, default=8)
+parser.add_argument("--CLASSES", type=int, default=[16, 21, 105, 162, 309, 340, 851])
 parser.add_argument("--LOG_FREQUENCY", type=int, default=100)
 parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
 parser.add_argument("--SCORE_LOSS_COEFF", type=float, default=1)
 parser.add_argument("--PROB_LOSS_COEFF", type=float, default=0)
 parser.add_argument("--BN_LOSS_COEFF", type=float, default=0.1)
-parser.add_argument("--TV_LOSS_COEFF", type=float, default=0.1)
+parser.add_argument("--TV_LOSS_COEFF", type=float, default=10)
 
-parser.add_argument("--NETWORK", type=str, default="vgg11_bn")
+parser.add_argument("--NETWORK", type=str, default="densenet121")
 #%%
 import torch, torchvision, kornia, tqdm, random, wandb, einops
 import matplotlib.pyplot as plt
@@ -52,7 +52,7 @@ with wandb.init(project="vis", config=args) as run:
         kornia.augmentation.RandomResizedCrop(
             size=(cfg.NET_INPUT_SIZE, cfg.NET_INPUT_SIZE),
             scale=(
-                cfg.NET_INPUT_SIZE / cfg.IMG_SIZE,
+                0.5 * cfg.NET_INPUT_SIZE / cfg.IMG_SIZE,
                 1,
             ),
             ratio=(1, 1),  # aspect ratio
@@ -73,9 +73,10 @@ with wandb.init(project="vis", config=args) as run:
     )
 
     net = get_timm_network(cfg.NETWORK)
+
     input_img_layer = InputImageLayer(
-        img_class=cfg.CLASS,
         img_shape=[3, cfg.IMG_SIZE, cfg.IMG_SIZE],
+        classes=cfg.CLASSES,
         param_fn=cfg.PARAM_FN,
         aug_fn=aug_fn,
     ).cuda()
@@ -91,15 +92,15 @@ with wandb.init(project="vis", config=args) as run:
         threshold=1e-4,
     )
 
-    wandb.watch(input_img_layer, log="all", log_freq=cfg.LOG_FREQUENCY)
+    # wandb.watch(input_img_layer, log="all", log_freq=cfg.LOG_FREQUENCY)
 
     for n in tqdm.tqdm(range(cfg.ITERATIONS + 1)):
         optimizer.zero_grad(set_to_none=True)
-        imgs = input_img_layer(cfg.BATCH_SIZE)
+        imgs, classes = input_img_layer(cfg.BATCH_SIZE)
         logits, activations = net(imgs)
 
-        prob_loss = probability_maximizer_loss(logits, cfg.CLASS)
-        score_loss = score_maximizer_loss(logits, cfg.CLASS)
+        prob_loss = probability_maximizer_loss(logits, classes)
+        score_loss = score_maximizer_loss(logits, classes)
         bn_loss = bn_stats_loss(activations)
         tv_loss = kornia.losses.total_variation(imgs).mean() / (
             imgs.shape[-1] * imgs.shape[-2]
@@ -125,7 +126,7 @@ with wandb.init(project="vis", config=args) as run:
 
         if n % cfg.LOG_FREQUENCY == 0:
             tensor = input_img_layer.input_tensor
-            img = input_img_layer.get_image()
+            log_imgs = input_img_layer.get_images()
             log_dict.update(
                 {
                     "tensor_stats/max_value": tensor.max(),
@@ -133,9 +134,9 @@ with wandb.init(project="vis", config=args) as run:
                     "tensor_stats/grad_mean_abs": tensor.grad.abs().mean(),
                     "tensor_stats/grad_std": tensor.grad.std(),
                     "tensor_stats/min_value": tensor.min(),
-                    "image_max_value": img.max(),
-                    "image_min_value": img.min(),
-                    "image": wandb.Image(input_img_layer.get_image()),
+                    # "image_max_value": imgs.max(),
+                    # "image_min_value": imgs.min(),
+                    "images": [wandb.Image(img) for img in log_imgs],
                 },
             )
 

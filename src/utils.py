@@ -37,16 +37,10 @@ def get_timm_network(name):
     mean = config["mean"]
     std = config["std"]
 
-    logging.info(f"Network name: {name}")
-    logging.info(f"Mean: {mean}")
-    logging.info(f"Std: {std}")
-    logging.info(f"Input size: {input_size}")
-
     preprocess = torch.nn.Sequential(
         torchvision.transforms.Resize(input_size),
         torchvision.transforms.Normalize(mean, std),
     )
-
     pre_and_net = torch.nn.Sequential(
         preprocess,
         network,
@@ -55,18 +49,18 @@ def get_timm_network(name):
     return BNStatsModelWrapper(pre_and_net)
 
 
-def score_maximizer_loss(logits, target_classes):
-    return -logits[:, target_classes].mean()
+def score_maximizer_loss(logits, classes):
+    return -logits[torch.arange(len(logits)), classes].mean()
 
 
-def probability_maximizer_loss(logits, target_classes):
-    b = logits.shape[0]
-    dev = logits.device
+def probability_maximizer_loss(logits, classes):
+    # b = logits.shape[0]
+    # dev = logits.device
 
-    target = (
-        torch.ones(size=[b], dtype=torch.long, device=logits.device) * target_classes
-    )
-    return torch.nn.CrossEntropyLoss()(logits, target)
+    # target = (
+    #     torch.ones(size=[b], dtype=torch.long, device=logits.device) * target_classes
+    # )
+    return torch.nn.CrossEntropyLoss()(logits, classes)
 
 
 def bn_stats_loss(activations):
@@ -126,52 +120,68 @@ class DummyDataset(Dataset):
 
 
 class InputImageLayer(torch.nn.Module):
-    def __init__(self, img_shape, img_class, param_fn, aug_fn=None):
+    def __init__(self, img_shape, classes, param_fn, aug_fn=None):
 
         super().__init__()
         self.aug_fn = aug_fn
+        self.num_classes = len(classes)
+        self.classes = torch.nn.Parameter(torch.tensor(classes), requires_grad=False)
 
         if param_fn == "sigmoid":
-            self.input_tensor = torch.nn.Parameter(torch.randn(*img_shape) * 0.0)
+            self.input_tensor = torch.nn.Parameter(
+                torch.randn(self.num_classes, *img_shape) * 0.0
+            )
             self.param_fn = torch.nn.Sigmoid()
 
         elif param_fn == "clip":
-            self.input_tensor = torch.nn.Parameter(torch.randn(*img_shape) * 0.0 + 0.5)
+            self.input_tensor = torch.nn.Parameter(
+                torch.randn(self.num_classes, *img_shape) * 0.0 + 0.5
+            )
             self.param_fn = lambda x: torch.clip(x, 0, 1)
 
-        elif param_fn == "scale":
-            self.input_tensor = torch.nn.Parameter(torch.rand(*img_shape))
+        # elif param_fn == "scale":
+        #     self.input_tensor = torch.nn.Parameter(torch.rand(self.num_classes, *img_shape))
 
-            def scale(x):
-                x = x - x.min()
-                x = x / x.max()
-                return x
+        #     def scale(x):
+        #         x = x - x.min()
+        #         x = x / x.max()
+        #         return x
 
-            self.param_fn = scale
+        #     self.param_fn = scale
 
         elif param_fn == "sin":
-            self.input_tensor = torch.nn.Parameter(torch.randn(*img_shape) * 0.0)
+            self.input_tensor = torch.nn.Parameter(
+                torch.randn(self.num_classes, *img_shape) * 0.0
+            )
             self.param_fn = lambda x: torch.sin(x) / 2 + 0.5
 
         else:
             raise Exception("Invalid param_fn")
 
     def forward(self, batch_size, augment=True):
-        img = self.param_fn(self.input_tensor)
-        imgs = einops.repeat(img, "c h w -> b c h w", b=batch_size)
+        indices = torch.randint(0, self.num_classes, [batch_size])
+        tensors = self.input_tensor[indices]
+        classes = self.classes[indices]
+        imgs = self.param_fn(tensors)
+
+        # imgs = einops.repeat(img, "c h w -> b c h w", b=batch_size)
         if self.aug_fn:
             imgs = self.aug_fn(imgs)
 
-        return imgs
+        return imgs, classes
 
-    def get_image(self, uint=False):
+    def get_images(self, uint=False):
+        images = []
         with torch.no_grad():
-            img_np = kornia.tensor_to_image(self.param_fn(self.input_tensor))
-            if uint == True:
-                scaled_img_np = img_np * 255
-                return scaled_img_np.astype(int)
-            else:
-                return img_np
+            for n in range(self.num_classes):
+                img_np = kornia.tensor_to_image(self.param_fn(self.input_tensor[n]))
+                if uint == True:
+                    scaled_img_np = img_np * 255
+                    img_ = scaled_img_np.astype(int)
+                else:
+                    img_ = img_np
+                images.append(img_)
+            return images
 
 
 class BNStatsModelWrapper(torch.nn.Module):
