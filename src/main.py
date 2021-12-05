@@ -5,10 +5,11 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("--IMG_SIZE", type=int, default=512)
 parser.add_argument("--NET_INPUT_SIZE", type=int, default=224)
-parser.add_argument("--LEARNING_RATE", type=float, default=0.1)
-parser.add_argument("--ITERATIONS", type=int, default=5000)
+parser.add_argument("--LEARNING_RATE", type=float, default=0.01)
+parser.add_argument("--ITERATIONS", type=int, default=50000)
 parser.add_argument("--BATCH_SIZE", type=int, default=8)
 parser.add_argument("--CLASSES", type=int, default=[16, 21, 105, 162, 309, 340, 851])
+# parser.add_argument("--CLASSES", type=int, default=list(range(10)))
 parser.add_argument("--LOG_FREQUENCY", type=int, default=100)
 parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
 parser.add_argument("--SCORE_LOSS_COEFF", type=float, default=1)
@@ -19,18 +20,20 @@ parser.add_argument("--TV_LOSS_COEFF", type=float, default=10)
 parser.add_argument("--NETWORK", type=str, default="densenet121")
 #%%
 import torch, torchvision, kornia, tqdm, random, wandb, einops
+import numpy as np
 import matplotlib.pyplot as plt
 import os, sys
-
-from utils import (
-    InputImageLayer,
+from input_img_layer import InputImageLayer
+from losses import (
     bn_stats_loss,
-    get_timm_network,
-    mixup_criterion,
     probability_maximizer_loss,
     score_maximizer_loss,
+    mixup_criterion,
+)
+from utils import (
+    BNStatsModelWrapper,
+    get_timm_network,
     imagenet_class_name_of,
-    add_noise,
     RandomCircularShift,
     # RollWrapper,
 )
@@ -39,8 +42,6 @@ from debug import (
     nonzero_grads,
     pixel_sample_ratio_map,
 )
-
-#%%
 
 torch.backends.cudnn.benchmark = True
 args = parser.parse_args(args=[])
@@ -73,6 +74,7 @@ with wandb.init(project="vis", config=args) as run:
     )
 
     net = get_timm_network(cfg.NETWORK)
+    net = BNStatsModelWrapper(net)
 
     input_img_layer = InputImageLayer(
         img_shape=[3, cfg.IMG_SIZE, cfg.IMG_SIZE],
@@ -92,41 +94,57 @@ with wandb.init(project="vis", config=args) as run:
         threshold=1e-4,
     )
 
-    # wandb.watch(input_img_layer, log="all", log_freq=cfg.LOG_FREQUENCY)
-
     for n in tqdm.tqdm(range(cfg.ITERATIONS + 1)):
         optimizer.zero_grad(set_to_none=True)
-        imgs, classes = input_img_layer(cfg.BATCH_SIZE)
-        logits, activations = net(imgs)
+        bn_losses = []
+        score_losses = []
+        prob_losses = []
+        tv_losses = []
+        losses = []
+        for idx in range(input_img_layer.num_classes):
+            imgs, classes = input_img_layer(cfg.BATCH_SIZE, index=idx)
+            logits, activations = net(imgs)
 
-        prob_loss = probability_maximizer_loss(logits, classes)
-        score_loss = score_maximizer_loss(logits, classes)
-        bn_loss = bn_stats_loss(activations)
-        tv_loss = kornia.losses.total_variation(imgs).mean() / (
-            imgs.shape[-1] * imgs.shape[-2]
-        )
+            prob_loss = probability_maximizer_loss(logits, classes)
+            score_loss = score_maximizer_loss(logits, classes)
+            bn_loss = bn_stats_loss(activations)
+            tv_loss = kornia.losses.total_variation(imgs).mean() / (
+                imgs.shape[-1] * imgs.shape[-2]
+            )
 
-        loss = (
-            bn_loss * cfg.BN_LOSS_COEFF
-            + score_loss * cfg.SCORE_LOSS_COEFF
-            + prob_loss * cfg.PROB_LOSS_COEFF
-            + tv_loss * cfg.TV_LOSS_COEFF
-        )
-        loss.backward()
+            loss = (
+                bn_loss * cfg.BN_LOSS_COEFF
+                + score_loss * cfg.SCORE_LOSS_COEFF
+                + prob_loss * cfg.PROB_LOSS_COEFF
+                + tv_loss * cfg.TV_LOSS_COEFF
+            )
+            prob_losses.append(prob_loss.item())
+            score_losses.append(score_loss.item())
+            bn_losses.append(bn_loss.item())
+            tv_losses.append(tv_loss.item())
+            losses.append(loss.item())
+            loss.backward()
+
+        loss = np.mean(losses)
         scheduler.step(loss)
         optimizer.step()
 
         log_dict = {
-            "losses/prob_loss": prob_loss,
-            "losses/score_loss": score_loss,
-            "losses/bn_loss": bn_loss,
-            "losses/tv": tv_loss,
+            "losses/prob_loss": np.mean(prob_losses),
+            "losses/score_loss": np.mean(score_losses),
+            "losses/bn_loss": np.mean(bn_losses),
+            "losses/tv": np.mean(tv_losses),
             "lr": optimizer.param_groups[0]["lr"],
         }
 
         if n % cfg.LOG_FREQUENCY == 0:
             tensor = input_img_layer.input_tensor
             log_imgs = input_img_layer.get_images()
+            wandb_imgs = [
+                wandb.Image(img, caption=imagenet_class_name_of(n))
+                for n, img in enumerate(log_imgs)
+            ]
+
             log_dict.update(
                 {
                     "tensor_stats/max_value": tensor.max(),
@@ -136,7 +154,7 @@ with wandb.init(project="vis", config=args) as run:
                     "tensor_stats/min_value": tensor.min(),
                     # "image_max_value": imgs.max(),
                     # "image_min_value": imgs.min(),
-                    "images": [wandb.Image(img) for img in log_imgs],
+                    "images": wandb_imgs,
                 },
             )
 
