@@ -18,6 +18,7 @@ parser.add_argument("--BN_LOSS_COEFF", type=float, default=0.1)
 parser.add_argument("--TV_LOSS_COEFF", type=float, default=10)
 
 parser.add_argument("--NETWORK", type=str, default="densenet121")
+args = parser.parse_args()
 #%%
 import torch, torchvision, kornia, tqdm, random, wandb, einops
 import numpy as np
@@ -44,7 +45,6 @@ from debug import (
 )
 
 torch.backends.cudnn.benchmark = True
-args = parser.parse_args(args=[])
 # with wandb.init(project="vis", config=args, mode="disabled") as run:
 with wandb.init(project="vis", config=args) as run:
     cfg = wandb.config
@@ -141,7 +141,7 @@ with wandb.init(project="vis", config=args) as run:
             tensor = input_img_layer.input_tensor
             log_imgs = input_img_layer.get_images()
             wandb_imgs = [
-                wandb.Image(img, caption=imagenet_class_name_of(n))
+                wandb.Image(img, caption=imagenet_class_name_of(cfg.CLASSES[n]))
                 for n, img in enumerate(log_imgs)
             ]
 
