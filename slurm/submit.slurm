@@ -11,5 +11,4 @@
 #SBATCH --time=20:00:00               # Sure siniri koyun.
 
 # NVIDIA GPU kullanmak icin --nv opsiyonunu kullanin.
-
-singularity run --nv deep-learning_latest.sif python src/main.py --BATCH_SIZE 128
+singularity run --nv deep-learning_latest.sif python src/main.py --BATCH_SIZE 256

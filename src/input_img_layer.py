@@ -11,7 +11,7 @@ class InputImageLayer(torch.nn.Module):
 
         if param_fn == "sigmoid":
             self.input_tensor = torch.nn.Parameter(
-                torch.randn(self.num_classes, *img_shape) * 0.0
+                torch.randn(self.num_classes, *img_shape) * 0.01
             )
             self.param_fn = torch.nn.Sigmoid()
 

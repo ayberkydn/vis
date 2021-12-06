@@ -1,13 +1,11 @@
 program: src/main.py
 entity: ayberkydn
-project: maximize-all-classes
+project: lr-deneme
 method: grid
 parameters:
   ITERATIONS:
-    value: 5000
-  CLASS:
-    values: [1-100]
-  LOSS_FN:
-    values:
-      - probability
-      - score
+    value: 10000
+  LEARNING_RATE:
+    values: [0.01, 0.03, 0.1, 0.3]
+  BATCH_SIZE:
+    value: 256

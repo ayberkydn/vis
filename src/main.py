@@ -8,16 +8,16 @@ parser.add_argument("--NET_INPUT_SIZE", type=int, default=224)
 parser.add_argument("--LEARNING_RATE", type=float, default=0.01)
 parser.add_argument("--ITERATIONS", type=int, default=50000)
 parser.add_argument("--BATCH_SIZE", type=int, default=8)
-parser.add_argument("--CLASSES", type=int, default=[16, 21, 105, 162, 309, 340, 851])
+parser.add_argument("--CLASSES", type=int, default=[309, 340, 851])
 # parser.add_argument("--CLASSES", type=int, default=list(range(10)))
 parser.add_argument("--LOG_FREQUENCY", type=int, default=100)
 parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
 parser.add_argument("--SCORE_LOSS_COEFF", type=float, default=1)
 parser.add_argument("--PROB_LOSS_COEFF", type=float, default=0)
-parser.add_argument("--BN_LOSS_COEFF", type=float, default=0.1)
-parser.add_argument("--TV_LOSS_COEFF", type=float, default=10)
+parser.add_argument("--BN_LOSS_COEFF", type=float, default=0)
+parser.add_argument("--TV_LOSS_COEFF", type=float, default=50)
 
-parser.add_argument("--NETWORK", type=str, default="densenet121")
+parser.add_argument("--NETWORK", type=str, default="resnet18")
 args = parser.parse_args()
 #%%
 import torch, torchvision, kornia, tqdm, random, wandb, einops
@@ -29,20 +29,14 @@ from losses import (
     bn_stats_loss,
     probability_maximizer_loss,
     score_maximizer_loss,
-    mixup_criterion,
 )
 from utils import (
     BNStatsModelWrapper,
     get_timm_network,
     imagenet_class_name_of,
     RandomCircularShift,
-    # RollWrapper,
 )
 
-from debug import (
-    nonzero_grads,
-    pixel_sample_ratio_map,
-)
 
 torch.backends.cudnn.benchmark = True
 # with wandb.init(project="vis", config=args, mode="disabled") as run:
@@ -87,12 +81,12 @@ with wandb.init(project="vis", config=args) as run:
         input_img_layer.parameters(),
         lr=cfg.LEARNING_RATE,
     )
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer=optimizer,
-        factor=0.99,
-        patience=100,
-        threshold=1e-4,
-    )
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    #     optimizer=optimizer,
+    #     factor=0.99,
+    #     patience=100,
+    #     threshold=1e-4,
+    # )
 
     for n in tqdm.tqdm(range(cfg.ITERATIONS + 1)):
         optimizer.zero_grad(set_to_none=True)
@@ -126,7 +120,7 @@ with wandb.init(project="vis", config=args) as run:
             loss.backward()
 
         loss = np.mean(losses)
-        scheduler.step(loss)
+        # scheduler.step(loss)
         optimizer.step()
 
         log_dict = {
