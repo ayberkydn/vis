@@ -19,7 +19,7 @@ services:
       resources:
         reservations:
           devices:
-          - device_ids: ['0']
+          - device_ids: ['0', '1']
             capabilities: ["gpu"]
   
   lab:

@@ -3,22 +3,31 @@ import argparse
 
 parser = argparse.ArgumentParser()
 
+parser.add_argument("--GPU", type=int, default=0)
 parser.add_argument("--IMG_SIZE", type=int, default=512)
 parser.add_argument("--NET_INPUT_SIZE", type=int, default=224)
 parser.add_argument("--LEARNING_RATE", type=float, default=0.01)
-parser.add_argument("--ITERATIONS", type=int, default=50000)
+parser.add_argument("--ITERATIONS", type=int, default=10000)
 parser.add_argument("--BATCH_SIZE", type=int, default=8)
-parser.add_argument("--CLASSES", type=int, default=[309, 340, 851])
-# parser.add_argument("--CLASSES", type=int, default=list(range(10)))
 parser.add_argument("--LOG_FREQUENCY", type=int, default=100)
 parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
-parser.add_argument("--SCORE_LOSS_COEFF", type=float, default=1)
-parser.add_argument("--PROB_LOSS_COEFF", type=float, default=0)
-parser.add_argument("--BN_LOSS_COEFF", type=float, default=0)
-parser.add_argument("--TV_LOSS_COEFF", type=float, default=50)
 
-parser.add_argument("--NETWORK", type=str, default="resnet18")
+parser.add_argument("--LOSS_SCORE_COEFF", type=float, default=1)
+parser.add_argument("--LOSS_PROB_COEFF", type=float, default=0)
+parser.add_argument("--LOSS_BN_COEFF", type=float, default=0)
+parser.add_argument("--LOSS_TV_COEFF", type=float, default=50)
+
+parser.add_argument("--AUG_H_FLIP", type=bool, default=False)
+parser.add_argument("--AUG_V_FLIP", type=bool, default=False)
+parser.add_argument("--AUG_ROTATE_DEGREES", type=int, default=30)
+
+parser.add_argument("--CLASSES", type=int, default=[309, 340, 851])
+# parser.add_argument("--CLASSES", type=int, default=list(range(10)))
+parser.add_argument("--NETWORK", type=str, default="swin_base_patch4_window7_224")
+
 args = parser.parse_args()
+
+
 #%%
 import torch, torchvision, kornia, tqdm, random, wandb, einops
 import numpy as np
@@ -37,11 +46,13 @@ from utils import (
     RandomCircularShift,
 )
 
-
-torch.backends.cudnn.benchmark = True
 # with wandb.init(project="vis", config=args, mode="disabled") as run:
 with wandb.init(project="vis", config=args) as run:
     cfg = wandb.config
+
+    device = f"cuda:{cfg.GPU}" if torch.cuda.is_available() else "cpu"
+    torch.backends.cudnn.benchmark = True
+
     aug_fn = torch.nn.Sequential(
         RandomCircularShift(),
         kornia.augmentation.RandomResizedCrop(
@@ -54,7 +65,7 @@ with wandb.init(project="vis", config=args) as run:
             same_on_batch=False,
         ),
         kornia.augmentation.RandomRotation(
-            degrees=180,
+            degrees=cfg.AUG_ROTATE_DEGREES,
             same_on_batch=False,
             p=1,
         ),
@@ -63,11 +74,11 @@ with wandb.init(project="vis", config=args) as run:
             p=1,
             same_on_batch=False,
         ),
-        kornia.augmentation.RandomHorizontalFlip(),
-        kornia.augmentation.RandomVerticalFlip(),
+        kornia.augmentation.RandomHorizontalFlip(p=0.5 * cfg.AUG_H_FLIP),
+        kornia.augmentation.RandomVerticalFlip(p=0.5 * cfg.AUG_V_FLIP),
     )
 
-    net = get_timm_network(cfg.NETWORK)
+    net = get_timm_network(cfg.NETWORK, device=device)
     net = BNStatsModelWrapper(net)
 
     input_img_layer = InputImageLayer(
@@ -75,7 +86,7 @@ with wandb.init(project="vis", config=args) as run:
         classes=cfg.CLASSES,
         param_fn=cfg.PARAM_FN,
         aug_fn=aug_fn,
-    ).cuda()
+    ).to(device)
 
     optimizer = torch.optim.RAdam(
         input_img_layer.parameters(),
@@ -96,21 +107,24 @@ with wandb.init(project="vis", config=args) as run:
         tv_losses = []
         losses = []
         for idx in range(input_img_layer.num_classes):
-            imgs, classes = input_img_layer(cfg.BATCH_SIZE, index=idx)
+            imgs, classes = input_img_layer(cfg.BATCH_SIZE)
             logits, activations = net(imgs)
 
             prob_loss = probability_maximizer_loss(logits, classes)
             score_loss = score_maximizer_loss(logits, classes)
-            bn_loss = bn_stats_loss(activations)
+            if len(activations) > 0:
+                bn_loss = bn_stats_loss(activations)
+            else:
+                bn_loss = torch.tensor(0)
             tv_loss = kornia.losses.total_variation(imgs).mean() / (
                 imgs.shape[-1] * imgs.shape[-2]
             )
 
             loss = (
-                bn_loss * cfg.BN_LOSS_COEFF
-                + score_loss * cfg.SCORE_LOSS_COEFF
-                + prob_loss * cfg.PROB_LOSS_COEFF
-                + tv_loss * cfg.TV_LOSS_COEFF
+                bn_loss * cfg.LOSS_BN_COEFF
+                + score_loss * cfg.LOSS_SCORE_COEFF
+                + prob_loss * cfg.LOSS_PROB_COEFF
+                + tv_loss * cfg.LOSS_TV_COEFF
             )
             prob_losses.append(prob_loss.item())
             score_losses.append(score_loss.item())

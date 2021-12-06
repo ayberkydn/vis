@@ -21,13 +21,13 @@ def imagenet_class_name_of(n: int) -> str:
     return labels[n]
 
 
-def get_timm_network(name):
+def get_timm_network(name, device):
     """
     - Creates networks, moves to cuda, disables parameter grads and set eval mode.
     - Merges the necessary normalization preprocessing with the networks
     - Returns the list of networks
     """
-    network = timm.create_model(name, pretrained=True).eval().cuda()
+    network = timm.create_model(name, pretrained=True).eval().to(device)
     config = resolve_data_config({}, model=network)
 
     for param in network.parameters():

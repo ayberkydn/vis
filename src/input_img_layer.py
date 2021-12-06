@@ -41,18 +41,12 @@ class InputImageLayer(torch.nn.Module):
             raise Exception("Invalid param_fn")
 
     def forward(self, batch_size, index=None, augment=True):
+        device = self.input_tensor.device
         if index == None:
-            indices = torch.randint(
-                0, self.num_classes, [batch_size], device=self.input_tensor.device
-            )
+            indices = torch.randint(0, self.num_classes, [batch_size], device=device)
         else:
             assert isinstance(index, int)
-            indices = (
-                torch.ones(
-                    batch_size, dtype=torch.long, device=self.input_tensor.device
-                )
-                * index
-            )
+            indices = torch.ones(batch_size, dtype=torch.long, device=device) * index
 
         tensors = self.input_tensor[indices]
         classes = self.classes[indices]
