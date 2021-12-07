@@ -4,12 +4,12 @@ import argparse
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--GPU", type=int, default=0)
-parser.add_argument("--IMG_SIZE", type=int, default=512)
+parser.add_argument("--LOG_FREQUENCY", type=int, default=100)
 parser.add_argument("--NET_INPUT_SIZE", type=int, default=224)
+parser.add_argument("--IMG_SIZE", type=int, default=512)
 parser.add_argument("--LEARNING_RATE", type=float, default=0.025)
 parser.add_argument("--ITERATIONS", type=int, default=10000)
 parser.add_argument("--BATCH_SIZE", type=int, default=8)
-parser.add_argument("--LOG_FREQUENCY", type=int, default=100)
 parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
 
 parser.add_argument("--LOSS_SCORE_COEFF", type=float, default=1)
