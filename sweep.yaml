@@ -49,6 +49,6 @@ parameters:
       - 180
 
   CLASSES:
-    value: [3, 4, 128]
+    value: [20, 47, 309]
   NETWORK:
     value: "resnet18"
