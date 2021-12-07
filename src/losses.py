@@ -9,13 +9,15 @@ def mixup_criterion(y_a, y_b, lam):
 
 
 def diversity_loss(activations):
+    losses = []
     for act in activations:
         outputs = act["output"]
         bsize = outputs.shape[0] // 2
-        activations1 = outputs[:bsize]
-        activations2 = outputs[bsize:]
-
-        return -torch.mean(torch.abs(activations1 - activations2))
+        act1 = outputs[:bsize]
+        act2 = outputs[bsize:]
+        loss = -torch.mean(torch.abs(act1 - act2))
+        losses.append(loss)
+    return torch.mean(torch.stack(losses))
 
 
 def mean_tv_loss(imgs):

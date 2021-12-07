@@ -18,11 +18,10 @@ parser.add_argument("--LOSS_BN_COEFF", type=float, default=0)
 parser.add_argument("--LOSS_TV_COEFF", type=float, default=50)
 parser.add_argument("--LOSS_DIV_COEFF", type=float, default=1)
 
-parser.add_argument("--AUG_H_FLIP", type=bool, default=False)
-parser.add_argument("--AUG_V_FLIP", type=bool, default=False)
+parser.add_argument("--AUG_FLIP", type=bool, default=False)
 parser.add_argument("--AUG_ROTATE_DEGREES", type=int, default=30)
 
-parser.add_argument("--CLASSES", type=int, default=[309, 340, 851, 988])
+parser.add_argument("--CLASSES", default=[309, 340, 851, 988])
 # parser.add_argument("--CLASSES", type=int, default=list(range(10)))
 parser.add_argument("--NETWORK", type=str, default="resnet18")
 
@@ -76,8 +75,8 @@ with wandb.init(project="vis", config=args) as run:
             p=1,
             same_on_batch=False,
         ),
-        kornia.augmentation.RandomHorizontalFlip(p=0.5 * cfg.AUG_H_FLIP),
-        kornia.augmentation.RandomVerticalFlip(p=0.5 * cfg.AUG_V_FLIP),
+        kornia.augmentation.RandomHorizontalFlip(p=0.5 * cfg.AUG_FLIP),
+        kornia.augmentation.RandomVerticalFlip(p=0.5 * cfg.AUG_FLIP),
     )
 
     net = get_timm_network(cfg.NETWORK, device=device)
@@ -167,8 +166,6 @@ with wandb.init(project="vis", config=args) as run:
                     "tensor_stats/grad_mean_abs": tensor.grad.abs().mean(),
                     "tensor_stats/grad_std": tensor.grad.std(),
                     "tensor_stats/min_value": tensor.min(),
-                    # "image_max_value": imgs.max(),
-                    # "image_min_value": imgs.min(),
                     "images": wandb_imgs,
                 },
             )
