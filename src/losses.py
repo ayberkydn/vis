@@ -1,3 +1,4 @@
+import kornia
 import torch
 
 
@@ -5,6 +6,21 @@ def mixup_criterion(y_a, y_b, lam):
     return lambda criterion, pred: lam * criterion(pred, y_a) + (1 - lam) * criterion(
         pred, y_b
     )
+
+
+def diversity_loss(activations):
+    for act in activations:
+        outputs = act["output"]
+        bsize = outputs.shape[0] // 2
+        activations1 = outputs[:bsize]
+        activations2 = outputs[bsize:]
+
+        return -torch.mean(torch.abs(activations1 - activations2))
+
+
+def mean_tv_loss(imgs):
+    H, W = imgs.shape[-2], imgs.shape[-1]
+    return kornia.losses.total_variation(imgs).mean() / (H * W)
 
 
 def score_maximizer_loss(logits, classes):

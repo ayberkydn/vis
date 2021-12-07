@@ -48,18 +48,6 @@ def get_timm_network(name, device):
     return pre_and_net
 
 
-class RandomCircularShift(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        H = x.shape[-2]
-        W = x.shape[-1]
-
-        shift_H = random.randint(0, H - 1)
-        shift_W = random.randint(0, W - 1)
-        shifted_img = torch.roll(x, shifts=(shift_H, shift_W), dims=(-2, -1))
-        return shifted_img
 
 
 class DummyDataset(Dataset):
@@ -73,43 +61,7 @@ class DummyDataset(Dataset):
         return "THIS IS WHAT YOU GET EVERY TIME"
 
 
-class BNStatsModelWrapper(torch.nn.Module):
-    def __init__(self, model):
-        super().__init__()
-        self.model = model
-        self.bn_stats = []
-        self.submodule_names = [name for name, layer in self.model.named_modules()]
-
-        def create_hook(name):
-            def hook(module, inputs, outputs):
-                assert len(inputs) == 1
-                self.bn_stats.append(
-                    {
-                        "name": name,
-                        "module": module,
-                        "inputs_mean": inputs[0].mean(dim=[0, -1, -2]),
-                        "inputs_var": inputs[0].var(dim=[0, -1, -2]),
-                    }
-                )
-
-            return hook
-
-        for name, layer in self.model.named_modules():
-            if isinstance(layer, torch.nn.BatchNorm2d):
-                layer.register_forward_hook(create_hook(name))
-
-    def forward(self, x):
-        self.bn_stats = []
-        outputs, activations = self.model(x), self.bn_stats
-        return outputs, activations
 
 
 if __name__ == "__main__":
-    net = timm.create_model("vgg11_bn")
-    net = BNStatsModelWrapper(net)
-    input = torch.rand(1, 3, 224, 224)
-    out, activations = net(input)
-
-    bn_activations = [
-        act for act in activations if isinstance(act["module"], torch.nn.BatchNorm2d)
-    ]
+    pass

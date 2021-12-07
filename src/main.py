@@ -6,7 +6,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--GPU", type=int, default=0)
 parser.add_argument("--IMG_SIZE", type=int, default=512)
 parser.add_argument("--NET_INPUT_SIZE", type=int, default=224)
-parser.add_argument("--LEARNING_RATE", type=float, default=0.01)
+parser.add_argument("--LEARNING_RATE", type=float, default=0.025)
 parser.add_argument("--ITERATIONS", type=int, default=10000)
 parser.add_argument("--BATCH_SIZE", type=int, default=8)
 parser.add_argument("--LOG_FREQUENCY", type=int, default=100)
@@ -16,14 +16,15 @@ parser.add_argument("--LOSS_SCORE_COEFF", type=float, default=1)
 parser.add_argument("--LOSS_PROB_COEFF", type=float, default=0)
 parser.add_argument("--LOSS_BN_COEFF", type=float, default=0)
 parser.add_argument("--LOSS_TV_COEFF", type=float, default=50)
+parser.add_argument("--LOSS_DIV_COEFF", type=float, default=1)
 
 parser.add_argument("--AUG_H_FLIP", type=bool, default=False)
 parser.add_argument("--AUG_V_FLIP", type=bool, default=False)
 parser.add_argument("--AUG_ROTATE_DEGREES", type=int, default=30)
 
-parser.add_argument("--CLASSES", type=int, default=[309, 340, 851])
+parser.add_argument("--CLASSES", type=int, default=[309, 340, 851, 988])
 # parser.add_argument("--CLASSES", type=int, default=list(range(10)))
-parser.add_argument("--NETWORK", type=str, default="swin_base_patch4_window7_224")
+parser.add_argument("--NETWORK", type=str, default="resnet18")
 
 args = parser.parse_args()
 
@@ -36,15 +37,16 @@ import os, sys
 from input_img_layer import InputImageLayer
 from losses import (
     bn_stats_loss,
+    diversity_loss,
+    mean_tv_loss,
     probability_maximizer_loss,
     score_maximizer_loss,
 )
-from utils import (
-    BNStatsModelWrapper,
-    get_timm_network,
-    imagenet_class_name_of,
-    RandomCircularShift,
-)
+
+from hook_wrappers import BNStatsModelWrapper, ConvActivationsWrapper
+
+from augmentations import RandomCircularShift
+from utils import imagenet_class_name_of, get_timm_network
 
 # with wandb.init(project="vis", config=args, mode="disabled") as run:
 with wandb.init(project="vis", config=args) as run:
@@ -79,9 +81,10 @@ with wandb.init(project="vis", config=args) as run:
     )
 
     net = get_timm_network(cfg.NETWORK, device=device)
-    net = BNStatsModelWrapper(net)
+    # net = BNStatsModelWrapper(net)
+    net = ConvActivationsWrapper(net)
 
-    input_img_layer = InputImageLayer(
+    in_layer = InputImageLayer(
         img_shape=[3, cfg.IMG_SIZE, cfg.IMG_SIZE],
         classes=cfg.CLASSES,
         param_fn=cfg.PARAM_FN,
@@ -89,7 +92,7 @@ with wandb.init(project="vis", config=args) as run:
     ).to(device)
 
     optimizer = torch.optim.RAdam(
-        input_img_layer.parameters(),
+        in_layer.parameters(),
         lr=cfg.LEARNING_RATE,
     )
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -105,49 +108,53 @@ with wandb.init(project="vis", config=args) as run:
         score_losses = []
         prob_losses = []
         tv_losses = []
+        div_losses = []
         losses = []
-        for idx in range(input_img_layer.num_classes):
-            imgs, classes = input_img_layer(cfg.BATCH_SIZE)
+        for _ in range(in_layer.n_classes):
+            idx = 2 * random.choices(range(in_layer.n_classes), k=cfg.BATCH_SIZE // 2)
+            imgs, classes = in_layer(idx)
             logits, activations = net(imgs)
 
             prob_loss = probability_maximizer_loss(logits, classes)
+            div_loss = diversity_loss(activations)
             score_loss = score_maximizer_loss(logits, classes)
-            if len(activations) > 0:
-                bn_loss = bn_stats_loss(activations)
-            else:
-                bn_loss = torch.tensor(0)
-            tv_loss = kornia.losses.total_variation(imgs).mean() / (
-                imgs.shape[-1] * imgs.shape[-2]
-            )
+            tv_loss = mean_tv_loss(imgs)
+            # bn_loss = bn_stats_loss(activations)
+
+            score_losses.append(score_loss.item())
+            prob_losses.append(prob_loss.item())
+            tv_losses.append(tv_loss.item())
+            div_losses.append(div_loss.item())
+            # bn_losses.append(bn_loss.item())
 
             loss = (
-                bn_loss * cfg.LOSS_BN_COEFF
-                + score_loss * cfg.LOSS_SCORE_COEFF
+                score_loss * cfg.LOSS_SCORE_COEFF
                 + prob_loss * cfg.LOSS_PROB_COEFF
                 + tv_loss * cfg.LOSS_TV_COEFF
+                + div_loss * cfg.LOSS_DIV_COEFF
+                # + bn_loss * cfg.LOSS_BN_COEFF
             )
-            prob_losses.append(prob_loss.item())
-            score_losses.append(score_loss.item())
-            bn_losses.append(bn_loss.item())
-            tv_losses.append(tv_loss.item())
             losses.append(loss.item())
+
             loss.backward()
 
-        loss = np.mean(losses)
-        # scheduler.step(loss)
+        total_loss = np.mean(losses)
+        # scheduler.step(total_loss)
         optimizer.step()
 
         log_dict = {
-            "losses/prob_loss": np.mean(prob_losses),
             "losses/score_loss": np.mean(score_losses),
-            "losses/bn_loss": np.mean(bn_losses),
-            "losses/tv": np.mean(tv_losses),
+            "losses/prob_loss": np.mean(prob_losses),
+            "losses/tv_loss": np.mean(tv_losses),
+            "losses/div_loss": np.mean(div_losses),
+            "losses/total_loss": total_loss,
+            # "losses/bn_loss": np.mean(bn_losses),
             "lr": optimizer.param_groups[0]["lr"],
         }
 
         if n % cfg.LOG_FREQUENCY == 0:
-            tensor = input_img_layer.input_tensor
-            log_imgs = input_img_layer.get_images()
+            tensor = in_layer.input_tensor
+            log_imgs = in_layer.get_images()
             wandb_imgs = [
                 wandb.Image(img, caption=imagenet_class_name_of(cfg.CLASSES[n]))
                 for n, img in enumerate(log_imgs)
