@@ -1,4 +1,13 @@
+import timm
 import torch
+
+
+class IntermediateOutput:
+    def __init__(self, module, name, inputs, outputs):
+        self.name = name
+        self.module = module
+        self.inputs = inputs
+        self.outputs = outputs
 
 
 class ConvActivationsWrapper(torch.nn.Module):
@@ -30,7 +39,7 @@ class ConvActivationsWrapper(torch.nn.Module):
         return outputs, activations
 
 
-class BNStatsModelWrapper(torch.nn.Module):
+class BNStatsWrapper(torch.nn.Module):
     def __init__(self, model):
         super().__init__()
         self.model = model
@@ -58,3 +67,39 @@ class BNStatsModelWrapper(torch.nn.Module):
         self.bn_stats = []
         outputs, activations = self.model(x), self.bn_stats
         return outputs, activations
+
+
+class VerboseExecutionWrapper(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+        self.aux = []
+
+        def create_hook(name):
+            def hook(module, inputs, outputs):
+                assert len(inputs) == 1
+                self.aux.append(
+                    {
+                        "name": name,
+                        "module": module,
+                        "inputs": inputs,
+                        "output": outputs,
+                    }
+                )
+
+            return hook
+
+        for name, layer in self.model.named_modules():
+            layer.register_forward_hook(create_hook(name))
+
+    def forward(self, x):
+        self.aux = []
+        outputs, aux = self.model(x), self.aux
+        return outputs, aux
+
+
+if __name__ == "__main__":
+    model = timm.create_model("resnet18")
+    model = VerboseExecutionWrapper(model)
+    inp = torch.randn(7, 3, 224, 224)
+    logits, aux = model(inp)

@@ -10,7 +10,7 @@
       "request": "launch",
       "program": "${file}",
       "env": {
-        "WANDB_MODE": "offline"
+        "WANDB_MODE": "disabled"
       },
       "console": "integratedTerminal"
     }

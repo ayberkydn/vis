@@ -15,11 +15,11 @@ parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
 parser.add_argument("--LOSS_SCORE_COEFF", type=float, default=1)
 parser.add_argument("--LOSS_PROB_COEFF", type=float, default=0)
 parser.add_argument("--LOSS_BN_COEFF", type=float, default=0)
-parser.add_argument("--LOSS_TV_COEFF", type=float, default=50)
+parser.add_argument("--LOSS_TV_COEFF", type=float, default=100)
 parser.add_argument("--LOSS_DIV_COEFF", type=float, default=1)
 
 parser.add_argument("--AUG_FLIP", type=bool, default=False)
-parser.add_argument("--AUG_ROTATE_DEGREES", type=int, default=30)
+parser.add_argument("--AUG_ROTATE_DEGREES", type=int, default=15)
 
 parser.add_argument("--CLASSES", default=[309, 340, 851, 988])
 # parser.add_argument("--CLASSES", type=int, default=list(range(10)))
@@ -38,11 +38,11 @@ from losses import (
     bn_stats_loss,
     diversity_loss,
     mean_tv_loss,
-    probability_maximizer_loss,
-    score_maximizer_loss,
+    softmax_loss,
+    score_increase_loss,
 )
 
-from hook_wrappers import BNStatsModelWrapper, ConvActivationsWrapper
+from hook_wrappers import BNStatsWrapper, ConvActivationsWrapper
 
 from augmentations import RandomCircularShift
 from utils import imagenet_class_name_of, get_timm_network
@@ -77,11 +77,11 @@ with wandb.init(project="vis", config=args) as run:
         ),
         kornia.augmentation.RandomHorizontalFlip(p=0.5 * cfg.AUG_FLIP),
         kornia.augmentation.RandomVerticalFlip(p=0.5 * cfg.AUG_FLIP),
+        RandomCircularShift(),
     )
 
     net = get_timm_network(cfg.NETWORK, device=device)
-    # net = BNStatsModelWrapper(net)
-    net = ConvActivationsWrapper(net)
+    net = BNStatsWrapper(net)
 
     in_layer = InputImageLayer(
         img_shape=[3, cfg.IMG_SIZE, cfg.IMG_SIZE],
@@ -94,12 +94,6 @@ with wandb.init(project="vis", config=args) as run:
         in_layer.parameters(),
         lr=cfg.LEARNING_RATE,
     )
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    #     optimizer=optimizer,
-    #     factor=0.99,
-    #     patience=100,
-    #     threshold=1e-4,
-    # )
 
     for n in tqdm.tqdm(range(cfg.ITERATIONS + 1)):
         optimizer.zero_grad(set_to_none=True)
@@ -107,47 +101,45 @@ with wandb.init(project="vis", config=args) as run:
         score_losses = []
         prob_losses = []
         tv_losses = []
-        div_losses = []
+        # div_losses = []
         losses = []
-        for _ in range(in_layer.n_classes):
-            idx = 2 * random.choices(range(in_layer.n_classes), k=cfg.BATCH_SIZE // 2)
-            imgs, classes = in_layer(idx)
+        for idx in range(in_layer.n_classes):
+            random_idx = random.choices(range(in_layer.n_classes), k=cfg.BATCH_SIZE)
+            same_idx = [idx] * cfg.BATCH_SIZE
+
+            imgs, classes = in_layer(random_idx)
             logits, activations = net(imgs)
 
-            prob_loss = probability_maximizer_loss(logits, classes)
-            div_loss = diversity_loss(activations)
-            score_loss = score_maximizer_loss(logits, classes)
+            prob_loss = softmax_loss(logits, classes)
+            score_loss = score_increase_loss(logits, classes)
             tv_loss = mean_tv_loss(imgs)
-            # bn_loss = bn_stats_loss(activations)
+            bn_loss = bn_stats_loss(activations)
+            # div_loss = diversity_loss(activations)
 
             score_losses.append(score_loss.item())
             prob_losses.append(prob_loss.item())
             tv_losses.append(tv_loss.item())
-            div_losses.append(div_loss.item())
-            # bn_losses.append(bn_loss.item())
+            # div_losses.append(div_loss.item())
+            bn_losses.append(bn_loss.item())
 
             loss = (
                 score_loss * cfg.LOSS_SCORE_COEFF
                 + prob_loss * cfg.LOSS_PROB_COEFF
                 + tv_loss * cfg.LOSS_TV_COEFF
-                + div_loss * cfg.LOSS_DIV_COEFF
-                # + bn_loss * cfg.LOSS_BN_COEFF
+                # + div_loss * cfg.LOSS_DIV_COEFF
+                + bn_loss * cfg.LOSS_BN_COEFF
             )
             losses.append(loss.item())
-
             loss.backward()
 
-        total_loss = np.mean(losses)
-        # scheduler.step(total_loss)
         optimizer.step()
 
         log_dict = {
             "losses/score_loss": np.mean(score_losses),
             "losses/prob_loss": np.mean(prob_losses),
             "losses/tv_loss": np.mean(tv_losses),
-            "losses/div_loss": np.mean(div_losses),
-            "losses/total_loss": total_loss,
-            # "losses/bn_loss": np.mean(bn_losses),
+            # "losses/div_loss": np.mean(div_losses),
+            "losses/bn_loss": np.mean(bn_losses),
             "lr": optimizer.param_groups[0]["lr"],
         }
 
