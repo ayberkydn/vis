@@ -30,16 +30,16 @@ def diversity_loss(activations):
     return torch.mean(torch.stack(losses))
 
 
-def mean_tv_loss(imgs):
+def tv_loss_fn(imgs):
     C, H, W = imgs.shape[-3], imgs.shape[-2], imgs.shape[-1]
     return kornia.losses.total_variation(imgs).mean() / (C * H * W)
 
 
-def score_increase_loss(logits, classes):
-    return -logits[torch.arange(len(logits)), classes].mean()
+def score_loss_fn(logits, classes):
+    return logits.mean() - logits[torch.arange(len(logits)), classes].mean()
 
 
-def softmax_loss(logits, classes, T=1, smooth=0):
+def softmax_loss_fn(logits, classes, T=1, smooth=0):
     return torch.nn.functional.cross_entropy(
         input=logits / T,
         target=classes,

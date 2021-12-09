@@ -6,30 +6,30 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--GPU", type=int, default=0)
 parser.add_argument("--LOG_FREQUENCY", type=int, default=100)
 parser.add_argument("--NET_INPUT_SIZE", type=int, default=224)
+parser.add_argument("--DISABLE_TQDM", type=bool, default=False)
 parser.add_argument("--IMG_SIZE", type=int, default=512)
 parser.add_argument("--LEARNING_RATE", type=float, default=0.025)
-parser.add_argument("--ITERATIONS", type=int, default=10000)
+parser.add_argument("--ITERATIONS", type=int, default=3000)
 parser.add_argument("--BATCH_SIZE", type=int, default=8)
 parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
 
 parser.add_argument("--LOSS_SCORE_COEFF", type=float, default=1)
 parser.add_argument("--LOSS_PROB_COEFF", type=float, default=0)
-parser.add_argument("--LOSS_BN_COEFF", type=float, default=0)
-parser.add_argument("--LOSS_TV_COEFF", type=float, default=100)
-parser.add_argument("--LOSS_DIV_COEFF", type=float, default=1)
+parser.add_argument("--LOSS_BN_COEFF", type=float, default=10)
+parser.add_argument("--LOSS_TV_COEFF", type=float, default=1e3)
+parser.add_argument("--LOSS_DIV_COEFF", type=float, default=10)
 
 parser.add_argument("--AUG_FLIP", type=bool, default=False)
 parser.add_argument("--AUG_ROTATE_DEGREES", type=int, default=15)
 
 parser.add_argument("--CLASSES", default=[309, 340, 851, 988])
-# parser.add_argument("--CLASSES", type=int, default=list(range(10)))
 parser.add_argument("--NETWORK", type=str, default="resnet18")
 
 args = parser.parse_args()
 
 
 #%%
-import torch, torchvision, kornia, tqdm, random, wandb, einops
+import torch, torchvision, kornia, tqdm, random, wandb, einops, datetime
 import numpy as np
 import matplotlib.pyplot as plt
 import os, sys
@@ -37,18 +37,23 @@ from input_img_layer import InputImageLayer
 from losses import (
     bn_stats_loss,
     diversity_loss,
-    mean_tv_loss,
-    softmax_loss,
-    score_increase_loss,
+    tv_loss_fn,
+    softmax_loss_fn,
+    score_loss_fn,
 )
 
-from hook_wrappers import BNStatsWrapper, ConvActivationsWrapper
+from hook_wrappers import (
+    BNStatsLossWrapper,
+    BNStatsWrapper,
+    ConvActivationsWrapper,
+    ConvSimilarityLossWrapper,
+)
 
 from augmentations import RandomCircularShift
 from utils import imagenet_class_name_of, get_timm_network
 
 # with wandb.init(project="vis", config=args, mode="disabled") as run:
-with wandb.init(project="vis", config=args) as run:
+with wandb.init(project="vis-denemeler", config=args) as run:
     cfg = wandb.config
 
     device = f"cuda:{cfg.GPU}" if torch.cuda.is_available() else "cpu"
@@ -59,8 +64,8 @@ with wandb.init(project="vis", config=args) as run:
         kornia.augmentation.RandomResizedCrop(
             size=(cfg.NET_INPUT_SIZE, cfg.NET_INPUT_SIZE),
             scale=(
-                0.5 * cfg.NET_INPUT_SIZE / cfg.IMG_SIZE,
-                1,
+                0.9 * cfg.NET_INPUT_SIZE / cfg.IMG_SIZE,
+                1.1 * cfg.NET_INPUT_SIZE / cfg.IMG_SIZE,
             ),
             ratio=(1, 1),  # aspect ratio
             same_on_batch=False,
@@ -70,18 +75,13 @@ with wandb.init(project="vis", config=args) as run:
             same_on_batch=False,
             p=1,
         ),
-        kornia.augmentation.RandomPerspective(
-            distortion_scale=0.5,
-            p=1,
-            same_on_batch=False,
-        ),
         kornia.augmentation.RandomHorizontalFlip(p=0.5 * cfg.AUG_FLIP),
         kornia.augmentation.RandomVerticalFlip(p=0.5 * cfg.AUG_FLIP),
-        RandomCircularShift(),
     )
 
-    net = get_timm_network(cfg.NETWORK, device=device)
-    net = BNStatsWrapper(net)
+    net, mean, std, input_size = get_timm_network(cfg.NETWORK, device=device)
+    net_convsim = ConvSimilarityLossWrapper(net)
+    net_bnstats = BNStatsLossWrapper(net)
 
     in_layer = InputImageLayer(
         img_shape=[3, cfg.IMG_SIZE, cfg.IMG_SIZE],
@@ -95,75 +95,95 @@ with wandb.init(project="vis", config=args) as run:
         lr=cfg.LEARNING_RATE,
     )
 
-    for n in tqdm.tqdm(range(cfg.ITERATIONS + 1)):
-        optimizer.zero_grad(set_to_none=True)
-        bn_losses = []
-        score_losses = []
-        prob_losses = []
-        tv_losses = []
-        # div_losses = []
-        losses = []
-        for idx in range(in_layer.n_classes):
-            random_idx = random.choices(range(in_layer.n_classes), k=cfg.BATCH_SIZE)
-            same_idx = [idx] * cfg.BATCH_SIZE
+    with tqdm.tqdm(total=cfg.ITERATIONS + 1, disable=cfg.DISABLE_TQDM) as pbar:
+        # for n in tqdm.tqdm(range(cfg.ITERATIONS + 1), disable=cfg.DISABLE_TQDM):
+        for n in range(cfg.ITERATIONS + 1):
+            pbar.update()
+            optimizer.zero_grad(set_to_none=True)
+            bn_losses = []
+            score_losses = []
+            prob_losses = []
+            tv_losses = []
+            similarity_losses = []
+            losses = []
+            for idx in range(in_layer.n_classes):
+                random_idx = random.choices(range(in_layer.n_classes), k=cfg.BATCH_SIZE)
+                same_idx = [idx] * cfg.BATCH_SIZE
 
-            imgs, classes = in_layer(random_idx)
-            logits, activations = net(imgs)
+                rand_imgs, rand_classes = in_layer(random_idx)
+                rand_logits, bnstats_loss = net_bnstats(rand_imgs)
 
-            prob_loss = softmax_loss(logits, classes)
-            score_loss = score_increase_loss(logits, classes)
-            tv_loss = mean_tv_loss(imgs)
-            bn_loss = bn_stats_loss(activations)
-            # div_loss = diversity_loss(activations)
+                same_imgs, same_classes = in_layer(same_idx)
+                same_logits, similarity_loss = net_convsim(same_imgs)
 
-            score_losses.append(score_loss.item())
-            prob_losses.append(prob_loss.item())
-            tv_losses.append(tv_loss.item())
-            # div_losses.append(div_loss.item())
-            bn_losses.append(bn_loss.item())
+                imgs = torch.cat([same_imgs, rand_imgs], dim=0)
+                logits = torch.cat([same_logits, rand_logits], dim=0)
+                classes = torch.cat([same_classes, rand_classes], dim=0)
 
-            loss = (
-                score_loss * cfg.LOSS_SCORE_COEFF
-                + prob_loss * cfg.LOSS_PROB_COEFF
-                + tv_loss * cfg.LOSS_TV_COEFF
-                # + div_loss * cfg.LOSS_DIV_COEFF
-                + bn_loss * cfg.LOSS_BN_COEFF
+                prob_loss = softmax_loss_fn(logits, classes)
+                score_loss = score_loss_fn(logits, classes)
+                tv_loss = tv_loss_fn(imgs)
+
+                score_losses.append(score_loss.item())
+                prob_losses.append(prob_loss.item())
+                tv_losses.append(tv_loss.item())
+                similarity_losses.append(similarity_loss.item())
+                bn_losses.append(bnstats_loss.item())
+
+                loss = (
+                    score_loss * cfg.LOSS_SCORE_COEFF
+                    + similarity_loss * cfg.LOSS_DIV_COEFF
+                    + prob_loss * cfg.LOSS_PROB_COEFF
+                    + tv_loss * cfg.LOSS_TV_COEFF
+                    + bnstats_loss * cfg.LOSS_BN_COEFF
+                )
+                loss.backward()
+
+            optimizer.step()
+
+            log_dict = {
+                "losses/score_loss": np.mean(score_losses),
+                "losses/prob_loss": np.mean(prob_losses),
+                "losses/tv_loss": np.mean(tv_losses),
+                "losses/div_loss": np.mean(similarity_losses),
+                "losses/bn_loss": np.mean(bn_losses),
+            }
+
+            total = pbar.format_dict["total"]
+            rate = pbar.format_dict["rate"]
+            elapsed = pbar.format_dict["elapsed"]
+            if rate != None:
+                remaining_secs = total / rate - elapsed
+
+                log_dict.update(
+                    {
+                        "timer/remaining_mins": remaining_secs / 60,
+                        "timer/iter_per_seconds": rate,
+                        "timer/elapsed_mins": elapsed / 60,
+                    }
+                )
+
+            if n % cfg.LOG_FREQUENCY == 0:
+                tensor = in_layer.input_tensor
+                log_imgs = in_layer.get_images()
+                wandb_imgs = [
+                    wandb.Image(img, caption=imagenet_class_name_of(cfg.CLASSES[n]))
+                    for n, img in enumerate(log_imgs)
+                ]
+
+                log_dict.update(
+                    {
+                        "tensor_stats/max_value": tensor.max(),
+                        "tensor_stats/grad_max_abs": tensor.grad.abs().max(),
+                        "tensor_stats/grad_mean_abs": tensor.grad.abs().mean(),
+                        "tensor_stats/grad_std": tensor.grad.std(),
+                        "tensor_stats/min_value": tensor.min(),
+                        "images": wandb_imgs,
+                    },
+                )
+
+            wandb.log(
+                log_dict,
+                step=n,
+                commit=True,
             )
-            losses.append(loss.item())
-            loss.backward()
-
-        optimizer.step()
-
-        log_dict = {
-            "losses/score_loss": np.mean(score_losses),
-            "losses/prob_loss": np.mean(prob_losses),
-            "losses/tv_loss": np.mean(tv_losses),
-            # "losses/div_loss": np.mean(div_losses),
-            "losses/bn_loss": np.mean(bn_losses),
-            "lr": optimizer.param_groups[0]["lr"],
-        }
-
-        if n % cfg.LOG_FREQUENCY == 0:
-            tensor = in_layer.input_tensor
-            log_imgs = in_layer.get_images()
-            wandb_imgs = [
-                wandb.Image(img, caption=imagenet_class_name_of(cfg.CLASSES[n]))
-                for n, img in enumerate(log_imgs)
-            ]
-
-            log_dict.update(
-                {
-                    "tensor_stats/max_value": tensor.max(),
-                    "tensor_stats/grad_max_abs": tensor.grad.abs().max(),
-                    "tensor_stats/grad_mean_abs": tensor.grad.abs().mean(),
-                    "tensor_stats/grad_std": tensor.grad.std(),
-                    "tensor_stats/min_value": tensor.min(),
-                    "images": wandb_imgs,
-                },
-            )
-
-        wandb.log(
-            log_dict,
-            step=n,
-            commit=True,
-        )

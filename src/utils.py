@@ -45,9 +45,7 @@ def get_timm_network(name, device):
         preprocess,
         network,
     )
-    return pre_and_net
-
-
+    return pre_and_net, mean, std, input_size
 
 
 class DummyDataset(Dataset):
@@ -59,8 +57,6 @@ class DummyDataset(Dataset):
 
     def __getitem__(self, index):
         return "THIS IS WHAT YOU GET EVERY TIME"
-
-
 
 
 if __name__ == "__main__":
