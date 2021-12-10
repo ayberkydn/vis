@@ -3,10 +3,6 @@ import argparse
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument("--GPU", type=int, default=0)
-parser.add_argument("--LOG_FREQUENCY", type=int, default=100)
-parser.add_argument("--NET_INPUT_SIZE", type=int, default=224)
-parser.add_argument("--DISABLE_TQDM", type=bool, default=False)
 parser.add_argument("--IMG_SIZE", type=int, default=512)
 parser.add_argument("--LEARNING_RATE", type=float, default=0.025)
 parser.add_argument("--ITERATIONS", type=int, default=3000)
@@ -35,8 +31,6 @@ import matplotlib.pyplot as plt
 import os, sys
 from input_img_layer import InputImageLayer
 from losses import (
-    bn_stats_loss,
-    diversity_loss,
     tv_loss_fn,
     softmax_loss_fn,
     score_loss_fn,
@@ -44,8 +38,6 @@ from losses import (
 
 from hook_wrappers import (
     BNStatsLossWrapper,
-    BNStatsWrapper,
-    ConvActivationsWrapper,
     ConvSimilarityLossWrapper,
 )
 
@@ -56,16 +48,18 @@ from utils import imagenet_class_name_of, get_timm_network
 with wandb.init(project="vis-denemeler", config=args) as run:
     cfg = wandb.config
 
-    device = f"cuda:{cfg.GPU}" if torch.cuda.is_available() else "cpu"
+    # device = f"cuda:{cfg.GPU}" if torch.cuda.is_available() else "cpu"
+    device = "cuda:0"
     torch.backends.cudnn.benchmark = True
 
+    net, mean, std, input_size = get_timm_network(cfg.NETWORK, device=device)
     aug_fn = torch.nn.Sequential(
         RandomCircularShift(),
         kornia.augmentation.RandomResizedCrop(
-            size=(cfg.NET_INPUT_SIZE, cfg.NET_INPUT_SIZE),
+            size=input_size,
             scale=(
-                0.9 * cfg.NET_INPUT_SIZE / cfg.IMG_SIZE,
-                1.1 * cfg.NET_INPUT_SIZE / cfg.IMG_SIZE,
+                0.9 * input_size[0] / cfg.IMG_SIZE,
+                1.1 * input_size[0] / cfg.IMG_SIZE,
             ),
             ratio=(1, 1),  # aspect ratio
             same_on_batch=False,
@@ -79,7 +73,6 @@ with wandb.init(project="vis-denemeler", config=args) as run:
         kornia.augmentation.RandomVerticalFlip(p=0.5 * cfg.AUG_FLIP),
     )
 
-    net, mean, std, input_size = get_timm_network(cfg.NETWORK, device=device)
     net_convsim = ConvSimilarityLossWrapper(net)
     net_bnstats = BNStatsLossWrapper(net)
 
@@ -163,7 +156,7 @@ with wandb.init(project="vis-denemeler", config=args) as run:
                     }
                 )
 
-            if n % cfg.LOG_FREQUENCY == 0:
+            if n % 100 == 0:
                 tensor = in_layer.input_tensor
                 log_imgs = in_layer.get_images()
                 wandb_imgs = [
