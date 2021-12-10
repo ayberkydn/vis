@@ -15,14 +15,14 @@ parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
 
 parser.add_argument("--LOSS_SCORE_COEFF", type=float, default=1)
 parser.add_argument("--LOSS_PROB_COEFF", type=float, default=0)
-parser.add_argument("--LOSS_BN_COEFF", type=float, default=10)
-parser.add_argument("--LOSS_TV_COEFF", type=float, default=1e3)
-parser.add_argument("--LOSS_DIV_COEFF", type=float, default=10)
+parser.add_argument("--LOSS_BN_COEFF", type=float, default=100)
+parser.add_argument("--LOSS_DIV_COEFF", type=float, default=100)
+parser.add_argument("--LOSS_TV_COEFF", type=float, default=0)
 
 parser.add_argument("--AUG_FLIP", type=bool, default=False)
 parser.add_argument("--AUG_ROTATE_DEGREES", type=int, default=15)
 
-parser.add_argument("--CLASSES", default=[309, 340, 851, 988])
+parser.add_argument("--CLASSES", default=[76, 254, 309, 340, 445, 851, 949, 988])
 parser.add_argument("--NETWORK", type=str, default="resnet18")
 
 args = parser.parse_args()

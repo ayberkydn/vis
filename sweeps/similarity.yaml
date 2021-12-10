@@ -1,24 +1,11 @@
 program: src/main.py
 entity: ayberkydn
-project: lr-deneme
+project: vis
+name: batchsize-deneme
 method: grid
 parameters:
   BATCH_SIZE:
-    value: 32
-  PARAM_FN:
-    value: "sigmoid"
+    values: [2, 8, 32, 128, 512, 2048]
 
-  LOSS_DIV_COEFF:
-    values:
-      - 0.1
-      - 1
-      - 3
-      - 10
-      - 30
-      - 100
-      - 300
-
-  CLASSES:
-    value: [309, 340, 851, 988]
   NETWORK:
     value: "resnet18"

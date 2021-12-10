@@ -3,33 +3,22 @@ entity: ayberkydn
 project: lr-deneme
 method: grid
 parameters:
-  GPU:
-    value: 0
-  LOG_FREQUENCY:
-    value: 100
-  NET_INPUT_SIZE:
-    value: 224
-  IMG_SIZE:
-    value: 1024
-  LEARNING_RATE:
-    value: 0.025
-  ITERATIONS:
-    value: 10000
-  BATCH_SIZE:
-    value: 32
-  PARAM_FN:
-    value: "sigmoid"
-
   LOSS_SCORE_COEFF:
     value: 1
   LOSS_PROB_COEFF:
     value: 0
-  LOSS_BN_COEFF:
-    value: 0
   LOSS_TV_COEFF:
-    values:
-      - 100
+    value: 0
 
+  LOSS_BN_COEFF:
+    values:
+      - 1
+      - 3
+      - 10
+      - 30
+      - 100
+      - 300
+      - 1000
   LOSS_DIV_COEFF:
     values:
       - 1
@@ -37,16 +26,8 @@ parameters:
       - 10
       - 30
       - 100
-
-  AUG_FLIP:
-    values:
-      - True
-      - False
-
-  AUG_ROTATE_DEGREES:
-    values:
-      - 0
-      - 180
+      - 300
+      - 1000
 
   CLASSES:
     value: [20, 47, 309]
