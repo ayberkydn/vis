@@ -1,0 +1,11 @@
+program: src/main.py
+entity: ayberkydn
+project: vis
+name: batchsize-deneme
+method: grid
+parameters:
+  BATCH_SIZE:
+    values: [2, 8, 32, 128, 512]
+
+  NETWORK:
+    value: "resnet18"
