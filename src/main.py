@@ -12,8 +12,8 @@ cfg_parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
 
 cfg_parser.add_argument("--LOSS_SCORE_COEFF", type=float, default=1)
 cfg_parser.add_argument("--LOSS_PROB_COEFF", type=float, default=0)
-cfg_parser.add_argument("--LOSS_BN_COEFF", type=float, default=100)
-cfg_parser.add_argument("--LOSS_DIV_COEFF", type=float, default=100)
+cfg_parser.add_argument("--LOSS_BN_COEFF", type=float, default=0)
+cfg_parser.add_argument("--LOSS_DIV_COEFF", type=float, default=0)
 cfg_parser.add_argument("--LOSS_TV_COEFF", type=float, default=0)
 
 cfg_parser.add_argument("--AUG_FLIP", type=bool, default=False)
@@ -55,10 +55,7 @@ with wandb.init(project="vis-denemeler", config=cfg_args) as run:
         RandomCircularShift(),
         kornia.augmentation.RandomResizedCrop(
             size=input_size,
-            scale=(
-                0.9 * input_size[0] / cfg.IMG_SIZE,
-                1.1 * input_size[0] / cfg.IMG_SIZE,
-            ),
+            scale=(input_size[0] / cfg.IMG_SIZE, 1),
             ratio=(1, 1),  # aspect ratio
             same_on_batch=False,
         ),
