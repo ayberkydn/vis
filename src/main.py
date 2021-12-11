@@ -1,28 +1,33 @@
 #%%
 import argparse
 
-parser = argparse.ArgumentParser()
 
-parser.add_argument("--IMG_SIZE", type=int, default=512)
-parser.add_argument("--LEARNING_RATE", type=float, default=0.025)
-parser.add_argument("--ITERATIONS", type=int, default=3000)
-parser.add_argument("--BATCH_SIZE", type=int, default=8)
-parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
+cfg_parser = argparse.ArgumentParser()
 
-parser.add_argument("--LOSS_SCORE_COEFF", type=float, default=1)
-parser.add_argument("--LOSS_PROB_COEFF", type=float, default=0)
-parser.add_argument("--LOSS_BN_COEFF", type=float, default=100)
-parser.add_argument("--LOSS_DIV_COEFF", type=float, default=100)
-parser.add_argument("--LOSS_TV_COEFF", type=float, default=0)
+cfg_parser.add_argument("--IMG_SIZE", type=int, default=512)
+cfg_parser.add_argument("--LEARNING_RATE", type=float, default=0.025)
+cfg_parser.add_argument("--ITERATIONS", type=int, default=5000)
+cfg_parser.add_argument("--BATCH_SIZE", type=int, default=8)
+cfg_parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
 
-parser.add_argument("--AUG_FLIP", type=bool, default=False)
-parser.add_argument("--AUG_ROTATE_DEGREES", type=int, default=15)
+cfg_parser.add_argument("--LOSS_SCORE_COEFF", type=float, default=1)
+cfg_parser.add_argument("--LOSS_PROB_COEFF", type=float, default=0)
+cfg_parser.add_argument("--LOSS_BN_COEFF", type=float, default=100)
+cfg_parser.add_argument("--LOSS_DIV_COEFF", type=float, default=100)
+cfg_parser.add_argument("--LOSS_TV_COEFF", type=float, default=0)
 
-parser.add_argument("--CLASSES", default=[76, 254, 309, 340, 445, 851, 949, 988])
-parser.add_argument("--NETWORK", type=str, default="resnet18")
+cfg_parser.add_argument("--AUG_FLIP", type=bool, default=False)
+cfg_parser.add_argument("--AUG_ROTATE_DEGREES", type=int, default=15)
 
-args = parser.parse_args()
+cfg_parser.add_argument("--CLASSES", default=[76, 254, 309, 340, 445, 851, 949, 988])
+cfg_parser.add_argument("--NETWORK", type=str, default="resnet18")
 
+cfg_args = cfg_parser.parse_args()
+
+
+run_parser = argparse.ArgumentParser()
+run_parser.add_argument("--DISABLE_TQDM", type=bool, default=False)
+run_args = run_parser.parse_args()
 
 #%%
 import torch, torchvision, kornia, tqdm, random, wandb, einops, datetime
@@ -44,11 +49,9 @@ from hook_wrappers import (
 from augmentations import RandomCircularShift
 from utils import imagenet_class_name_of, get_timm_network
 
-# with wandb.init(project="vis", config=args, mode="disabled") as run:
-with wandb.init(project="vis-denemeler", config=args) as run:
+with wandb.init(project="vis-denemeler", config=cfg_args) as run:
     cfg = wandb.config
 
-    # device = f"cuda:{cfg.GPU}" if torch.cuda.is_available() else "cpu"
     device = "cuda:0"
     torch.backends.cudnn.benchmark = True
 
@@ -85,10 +88,14 @@ with wandb.init(project="vis-denemeler", config=args) as run:
 
     optimizer = torch.optim.RAdam(
         in_layer.parameters(),
-        lr=cfg.LEARNING_RATE,
+        lr=cfg.BATCH_SIZE * 0.2,
     )
+    # optimizer = torch.optim.RAdam(
+    #     in_layer.parameters(),
+    #     lr=cfg.LEARNING_RATE,
+    # )
 
-    with tqdm.tqdm(total=cfg.ITERATIONS + 1, disable=cfg.DISABLE_TQDM) as pbar:
+    with tqdm.tqdm(total=cfg.ITERATIONS + 1, disable=run_args.DISABLE_TQDM) as pbar:
         # for n in tqdm.tqdm(range(cfg.ITERATIONS + 1), disable=cfg.DISABLE_TQDM):
         for n in range(cfg.ITERATIONS + 1):
             pbar.update()
@@ -180,3 +187,14 @@ with wandb.init(project="vis-denemeler", config=args) as run:
                 step=n,
                 commit=True,
             )
+    model_save_path = os.path.join(run.dir, "in_layer.pt")
+    torch.save(in_layer, model_save_path)
+    wandb.save(model_save_path)
+    # inlayer_artifact = wandb.Artifact(
+    #     name="my_inlayer_artifact",
+    #     type="input_layer_type",
+    #     description="SOME optional description",
+    #     metadata=dict(cfg),
+    # )
+    # inlayer_artifact.add_file("artifacts/saved_inlayer.pt")
+    # wandb.log_artifact(inlayer_artifact)
