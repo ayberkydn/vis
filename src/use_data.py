@@ -1,4 +1,5 @@
 import torch, wandb
 
-best_model = wandb.restore("in_layer.pt", run_path="ayberkydn/vis-denemeler/380mr8sv")
-model = torch.load(best_model.name)
+with wandb.init(project="vis-denemeler", mode="offline") as run:
+    artifact = run.use_artifact("my_inlayer_artifact:latest")
+    artifact_dir = artifact.download()
