@@ -24,11 +24,6 @@ cfg_parser.add_argument("--NETWORK", type=str, default="resnet18")
 
 cfg_args = cfg_parser.parse_args()
 
-
-run_parser = argparse.ArgumentParser()
-run_parser.add_argument("--DISABLE_TQDM", type=bool, default=False)
-run_args = run_parser.parse_args()
-
 #%%
 import torch, torchvision, kornia, tqdm, random, wandb, einops, datetime
 import numpy as np
@@ -88,14 +83,14 @@ with wandb.init(project="vis-denemeler", config=cfg_args) as run:
 
     optimizer = torch.optim.RAdam(
         in_layer.parameters(),
-        lr=cfg.BATCH_SIZE * 0.2,
+        lr=cfg.BATCH_SIZE * 0.003125,
     )
     # optimizer = torch.optim.RAdam(
     #     in_layer.parameters(),
     #     lr=cfg.LEARNING_RATE,
     # )
 
-    with tqdm.tqdm(total=cfg.ITERATIONS + 1, disable=run_args.DISABLE_TQDM) as pbar:
+    with tqdm.tqdm(total=cfg.ITERATIONS + 1) as pbar:
         # for n in tqdm.tqdm(range(cfg.ITERATIONS + 1), disable=cfg.DISABLE_TQDM):
         for n in range(cfg.ITERATIONS + 1):
             pbar.update()
