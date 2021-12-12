@@ -3,4 +3,5 @@
 wandb/
 *.sif
 *.out
+*.err
 
