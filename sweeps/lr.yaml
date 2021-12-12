@@ -1,0 +1,19 @@
+program: src/main.py
+entity: ayberkydn
+method: grid
+######################
+project: vis
+name: lr-bn-tv-score-deneme
+######################
+parameters:
+  LEARNING_RATE:
+    values: [0.01, 0.1, 1]
+  LOSS_SCORE_COEFF:
+    values: [0.1, 1, 10]
+  LOSS_BN_COEFF:
+    values: [0, 1, 10, 100]
+  LOSS_TV_COEFF:
+    values: [0, 1, 10, 100]
+
+  NETWORK:
+    value: "resnet18"

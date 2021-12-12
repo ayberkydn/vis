@@ -104,14 +104,6 @@ class ConvSimilarityLossWrapper(torch.nn.Module):
         self.model = model
         self.losses = []
 
-        def hook(module, inputs, outputs):
-            out_std = outputs.std(dim=0)
-            self.losses.append(-out_std.mean())
-
-        for name, layer in self.model.named_modules():
-            if isinstance(layer, torch.nn.Conv2d):
-                layer.register_forward_hook(hook)
-
     def forward(self, x):
         del self.losses
         self.losses = []
@@ -120,13 +112,17 @@ class ConvSimilarityLossWrapper(torch.nn.Module):
         return outputs, loss
 
 
-class BNStatsLossWrapper(torch.nn.Module):
+class AuxLossWrapper(torch.nn.Module):
     def __init__(self, model):
         super().__init__()
         self.model = model
         self.losses = []
 
-        def hook(module, inputs, outputs):
+        def conv_hook(module, inputs, outputs):
+            out_std = outputs.std(dim=0)
+            self.losses.append(-out_std.mean())
+
+        def bn_hook(module, inputs, outputs):
             assert len(inputs) == 1
             inputs = inputs[0]
 
@@ -135,13 +131,17 @@ class BNStatsLossWrapper(torch.nn.Module):
             running_mean = module.running_mean
             running_var = module.running_var
 
-            loss = (inputs_mean - running_mean) ** 2 + (inputs_var - running_var) ** 2
+            mean_loss = torch.square(inputs_mean - running_mean)
+            var_loss = torch.square(inputs_var - running_var)
+            loss = torch.mean(mean_loss + var_loss)
 
-            self.losses.append(loss.mean())
+            self.losses.append(loss)
 
         for name, layer in self.model.named_modules():
             if isinstance(layer, torch.nn.BatchNorm2d):
-                layer.register_forward_hook(hook)
+                layer.register_forward_hook(bn_hook)
+            # if isinstance(layer, torch.nn.Conv2d):
+            #     layer.register_forward_hook(conv_hook)
 
     def forward(self, x):
         del self.losses
