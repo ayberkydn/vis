@@ -5,10 +5,11 @@ import argparse
 cfg_parser = argparse.ArgumentParser()
 
 cfg_parser.add_argument("--IMG_SIZE", type=int, default=512)
-cfg_parser.add_argument("--LEARNING_RATE", type=float, default=0.1)
+cfg_parser.add_argument("--LEARNING_RATE", type=float, default=0.01)
 cfg_parser.add_argument("--ITERATIONS", type=int, default=5000)
-cfg_parser.add_argument("--BATCH_SIZE", type=int, default=32)
+cfg_parser.add_argument("--BATCH_SIZE", type=int, default=8)
 cfg_parser.add_argument("--PARAM_FN", type=str, default="sigmoid")
+cfg_parser.add_argument("--PRECISION", type=str, default="float")
 
 cfg_parser.add_argument("--LOSS_SCORE_COEFF", type=float, default=1)
 cfg_parser.add_argument("--LOSS_PROB_COEFF", type=float, default=0)
@@ -49,6 +50,7 @@ with wandb.init(project="vis-denemeler", config=cfg_args) as run:
 
     device = "cuda:0"
     torch.backends.cudnn.benchmark = True
+    # scaler = torch.cuda.amp.GradScaler()
 
     net, mean, std, input_size = get_timm_network(cfg.NETWORK, device=device)
     aug_fn = torch.nn.Sequential(
@@ -83,6 +85,10 @@ with wandb.init(project="vis-denemeler", config=cfg_args) as run:
         lr=cfg.LEARNING_RATE,
     )
 
+    # in_layer = in_layer.half()
+    # net = net.half()
+
+    scaler = torch.cuda.amp.GradScaler()
     start_time = time.time()
     for n in tqdm.tqdm(range(cfg.ITERATIONS + 1)):
         optimizer.zero_grad(set_to_none=True)
@@ -92,40 +98,44 @@ with wandb.init(project="vis-denemeler", config=cfg_args) as run:
         tv_losses = []
         similarity_losses = []
         losses = []
-        for idx in range(in_layer.n_classes):
-            random_idx = random.choices(range(in_layer.n_classes), k=cfg.BATCH_SIZE)
-            same_idx = [idx] * cfg.BATCH_SIZE
+        with torch.cuda.amp.autocast():
+            for idx in range(in_layer.n_classes):
+                random_idx = random.choices(range(in_layer.n_classes), k=cfg.BATCH_SIZE)
+                same_idx = [idx] * cfg.BATCH_SIZE
 
-            rand_imgs, rand_classes = in_layer(random_idx)
-            rand_logits, bnstats_loss = net_bnstats(rand_imgs)
+                rand_imgs, rand_classes = in_layer(random_idx)
+                rand_logits, bnstats_loss = net_bnstats(rand_imgs)
 
-            same_imgs, same_classes = in_layer(same_idx)
-            same_logits, similarity_loss = net_convsim(same_imgs)
+                same_imgs, same_classes = in_layer(same_idx)
+                same_logits, similarity_loss = net_convsim(same_imgs)
 
-            imgs = torch.cat([same_imgs, rand_imgs], dim=0)
-            logits = torch.cat([same_logits, rand_logits], dim=0)
-            classes = torch.cat([same_classes, rand_classes], dim=0)
+                imgs = torch.cat([same_imgs, rand_imgs], dim=0)
+                logits = torch.cat([same_logits, rand_logits], dim=0)
+                classes = torch.cat([same_classes, rand_classes], dim=0)
 
-            prob_loss = softmax_loss_fn(logits, classes)
-            score_loss = score_loss_fn(logits, classes)
-            tv_loss = tv_loss_fn(imgs)
+                prob_loss = softmax_loss_fn(logits, classes)
+                score_loss = score_loss_fn(logits, classes)
+                tv_loss = tv_loss_fn(imgs)
 
-            score_losses.append(score_loss.item())
-            prob_losses.append(prob_loss.item())
-            tv_losses.append(tv_loss.item())
-            similarity_losses.append(similarity_loss.item())
-            bn_losses.append(bnstats_loss.item())
+                score_losses.append(score_loss.item())
+                prob_losses.append(prob_loss.item())
+                tv_losses.append(tv_loss.item())
+                similarity_losses.append(similarity_loss.item())
+                bn_losses.append(bnstats_loss.item())
 
-            loss = (
-                score_loss * cfg.LOSS_SCORE_COEFF
-                + similarity_loss * cfg.LOSS_DIV_COEFF
-                + prob_loss * cfg.LOSS_PROB_COEFF
-                + tv_loss * cfg.LOSS_TV_COEFF
-                + bnstats_loss * cfg.LOSS_BN_COEFF
-            )
-            loss.backward()
+                loss = (
+                    score_loss * cfg.LOSS_SCORE_COEFF
+                    + similarity_loss * cfg.LOSS_DIV_COEFF
+                    + prob_loss * cfg.LOSS_PROB_COEFF
+                    + tv_loss * cfg.LOSS_TV_COEFF
+                    + bnstats_loss * cfg.LOSS_BN_COEFF
+                )
+                scaler.scale(loss).backward()
+                # loss.backward()
 
-        optimizer.step()
+            # optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
 
         log_dict = {
             "losses/score_loss": np.mean(score_losses),

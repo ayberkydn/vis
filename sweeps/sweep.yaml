@@ -3,6 +3,8 @@ entity: ayberkydn
 project: vis
 method: grid
 parameters:
+  ITERATIONS:
+    value: 100
   LOSS_BN_COEFF:
     values: [0, 10, 1000]
   LOSS_DIV_COEFF:
