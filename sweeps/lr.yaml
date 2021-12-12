@@ -16,4 +16,4 @@ parameters:
     values: [0, 1, 10, 100]
 
   NETWORK:
-    value: "resnet18"
+    values: ["resnet18", "resnet50"]
