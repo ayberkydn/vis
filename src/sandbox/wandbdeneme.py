@@ -1,7 +1,16 @@
-import wandb, torch, timm
+import wandb
 
-with wandb.init(project="deneme", mode="online") as run:
-    model = timm.create_model("resnet18")
+api = wandb.Api()
 
-    torch.save(model, f="mymodel.pt")
-    wandb.log_artifact("mymodel.pt", name="new_artifact", type="my_dataset")
+sweep = api.sweep("ayberkydn/vis/ffey02t9")
+
+# for run in sweep.runs:
+#     for file in run.files():
+#         try:
+#             file.download()
+#         except:
+#             pass
+
+run = sweep.runs[2]
+for file in run.files():
+    file.download("asd")

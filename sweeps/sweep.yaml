@@ -1,13 +1,15 @@
 program: src/main.py
 entity: ayberkydn
-project: vis
 method: grid
+######################
+project: vis
+name: bn-vis
+######################
 parameters:
-  ITERATIONS:
-    value: 100
-  LOSS_BN_COEFF:
-    values: [0, 10, 1000]
-  LOSS_DIV_COEFF:
-    values: [0, 10, 1000]
-  NETWORK:
-    value: "resnet18"
+  LOSS_BN_LAYERS_N:
+    values:
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+
+  NETWORKS:
+    values:
+      - ["tf_efficientnet_b0_ap"]

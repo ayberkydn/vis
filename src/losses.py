@@ -32,7 +32,14 @@ def diversity_loss(activations):
 
 def tv_loss_fn(imgs):
     C, H, W = imgs.shape[-3], imgs.shape[-2], imgs.shape[-1]
-    return kornia.losses.total_variation(imgs).mean() / (C * H * W)
+    pixel_dif1 = imgs[..., 1:, :] - imgs[..., :-1, :]
+    pixel_dif2 = imgs[..., :, 1:] - imgs[..., :, :-1]
+
+    reduce_axes = (-3, -2, -1)
+    res1 = torch.square(pixel_dif1).mean()
+    res2 = torch.square(pixel_dif2).mean()
+
+    return res1 + res2
 
 
 def score_loss_fn(logits, classes):
@@ -64,7 +71,8 @@ def bn_stats_loss(activations):
         running_var = activations[act_n]["module"].running_var
 
         # loss = kl_loss_gaussian(act_mean, act_var, running_mean, running_var)
-        loss = (act_mean - running_mean) ** 2 + (act_var - running_var) ** 2
+        # loss = (act_mean - running_mean) ** 2 + (act_var - running_var) ** 2
+        loss = abs(act_mean - running_mean) + abs(act_var - running_var)
 
         losses.append(loss.mean())
 

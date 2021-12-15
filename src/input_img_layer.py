@@ -20,25 +20,9 @@ class InputImageLayer(torch.nn.Module):
 
         elif param_fn == "clip":
             self.input_tensor = torch.nn.Parameter(
-                torch.randn(self.n_classes, *img_shape) * 0.0 + 0.5
+                torch.randn(self.n_classes, *img_shape) * 0.01 + 0.5
             )
             self.param_fn = lambda x: torch.clip(x, 0, 1)
-
-        # elif param_fn == "scale":
-        #     self.input_tensor = torch.nn.Parameter(torch.rand(self.num_classes, *img_shape))
-
-        #     def scale(x):
-        #         x = x - x.min()
-        #         x = x / x.max()
-        #         return x
-
-        #     self.param_fn = scale
-
-        elif param_fn == "sin":
-            self.input_tensor = torch.nn.Parameter(
-                torch.randn(self.n_classes, *img_shape) * 0.0
-            )
-            self.param_fn = lambda x: torch.sin(x) / 2 + 0.5
 
         else:
             raise Exception("Invalid param_fn")
