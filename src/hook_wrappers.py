@@ -23,9 +23,20 @@ class AuxLossWrapper(torch.nn.Module):
 
             mean_loss = torch.square(inputs_mean - running_mean)
             var_loss = torch.square(inputs_var - running_var)
-            # loss = torch.mean(mean_loss + var_loss)
-            loss = torch.mean(mean_loss)
+            loss = torch.mean(mean_loss + var_loss)
 
+            self.losses.append(loss)
+
+        def style_hook(module, inputs, outputs):
+            assert len(inputs) == 1
+            inputs = inputs[0]
+
+            B, C, H, W = inputs.shape
+            inputs_flat = inputs.view(B, C, -1)
+            gram_matrices = torch.bmm(inputs_flat, inputs_flat.transpose(-2, -1))
+            normalized_gram_matrices = gram_matrices / (C * H * W)
+
+            loss = -normalized_gram_matrices.std(dim=0).mean()
             self.losses.append(loss)
 
         layers = [layer for name, layer in self.model.named_modules()]
@@ -46,6 +57,7 @@ class AuxLossWrapper(torch.nn.Module):
 
         for layer in loss_layers:
             layer.register_forward_hook(bn_hook)
+            # layer.register_forward_hook(style_hook)
 
     def forward(self, x):
         del self.losses
@@ -57,3 +69,6 @@ class AuxLossWrapper(torch.nn.Module):
 
 if __name__ == "__main__":
     model = timm.create_model("resnet18")
+    model = AuxLossWrapper(model)
+    img = torch.randn(4, 3, 224, 224)
+    out = model(img)

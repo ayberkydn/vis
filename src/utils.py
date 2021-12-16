@@ -21,14 +21,27 @@ def imagenet_class_name_of(n: int) -> str:
     return labels[n]
 
 
-def get_timm_network(name, device):
+def get_network(name, device):
+
     """
     - Creates networks, moves to cuda, disables parameter grads and set eval mode.
     - Merges the necessary normalization preprocessing with the networks
-    - Returns the list of networks
+    - Returns the network
     """
-    network = timm.create_model(name, pretrained=True).eval().to(device)
-    config = resolve_data_config({}, model=network)
+    if "cifar" in name:
+        network = torch.hub.load(
+            "chenyaofo/pytorch-cifar-models", name, pretrained=True
+        )
+        config = {
+            "input_size": (3, 32, 32),
+            "mean": (0.4914, 0.4822, 0.4465),
+            "std": (0.2471, 0.2435, 0.2616),
+        }
+    else:
+        network = timm.create_model(name, pretrained=True)
+        config = resolve_data_config({}, model=network)
+
+    network = network.eval().to(device)
 
     for param in network.parameters():
         param.requires_grad = False
@@ -60,4 +73,4 @@ class DummyDataset(Dataset):
 
 
 if __name__ == "__main__":
-    pass
+    net = get_network("resnet18", device="cuda")

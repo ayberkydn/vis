@@ -46,6 +46,13 @@ def score_loss_fn(logits, classes):
     return logits.mean() - logits[torch.arange(len(logits)), classes].mean()
 
 
+def inception_loss(logits, classes, scale=1):
+    target_logits = logits[torch.arange(len(logits)), classes]
+    scaled_logits = target_logits / scale
+
+    return torch.exp(-scaled_logits).mean()
+
+
 def softmax_loss_fn(logits, classes, T=1, smooth=0):
     return torch.nn.functional.cross_entropy(
         input=logits / T,
@@ -77,3 +84,9 @@ def bn_stats_loss(activations):
         losses.append(loss.mean())
 
     return torch.mean(torch.stack(losses))
+
+
+if __name__ == "__main__":
+    logits = torch.randn(4, 100)
+    targets = [1, 4, 2, 3]
+    loss = inception_loss(logits, targets, scale=1)

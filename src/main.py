@@ -1,43 +1,44 @@
 #%%
 import argparse
 
-
 cfg_parser = argparse.ArgumentParser()
 
-cfg_parser.add_argument("--IMG_SIZE", type=int, default=1024)
+cfg_parser.add_argument("--IMG_SIZE", type=int, default=128)
+cfg_parser.add_argument("--CROP_RATIO", type=float, default=4)
+cfg_parser.add_argument("--BATCH_SIZE", type=int, default=None)
 cfg_parser.add_argument("--LEARNING_RATE", type=float, default=0.1)
 cfg_parser.add_argument("--MAX_ITERATIONS", type=int, default=10000)
-cfg_parser.add_argument("--BATCH_SIZE", type=int, default=64)
 cfg_parser.add_argument("--PARAM_FN", type=str, default="clip")
-cfg_parser.add_argument("--USE_AMP", type=bool, default=True)
+cfg_parser.add_argument("--USE_AMP", type=bool, default=False)
 
-cfg_parser.add_argument("--LOSS_SCORE_COEFF", type=float, default=0)
-cfg_parser.add_argument("--LOSS_TV_COEFF", type=float, default=0)
+cfg_parser.add_argument("--LOSS_SCORE_COEFF", type=float, default=1)
+cfg_parser.add_argument("--LOSS_TV_COEFF", type=float, default=1)
 cfg_parser.add_argument("--LOSS_BN_COEFF", type=float, default=1)
 cfg_parser.add_argument("--LOSS_BN_LAYERS_MODE", type=str, default="all")
-cfg_parser.add_argument("--LOSS_BN_LAYERS_N", type=int, default=10)
-
+cfg_parser.add_argument("--LOSS_BN_LAYERS_N", type=int, default=5)
 
 cfg_parser.add_argument("--AUG_FLIP", type=bool, default=False)
 cfg_parser.add_argument("--AUG_ROTATE_DEGREES", type=int, default=30)
 
-cfg_parser.add_argument("--CLASSES", default=[999])
+# cfg_parser.add_argument("--CLASSES", default=[107, 301, 611, 818])
+cfg_parser.add_argument("--CLASSES", default=[1, 4, 7, 9])
 cfg_parser.add_argument(
     "--NETWORKS",
     type=str,
     default=[
         # "tf_efficientnet_b0_ap",
-        "resnet18",
+        # "resnet18",
         # "resnetblur18",
-        "resnet26",
-        "resnet34",
-        "resnet50",
+        # "resnet26",
+        # "resnet34",
+        # "resnet50",
         # "resnetblur50",
         # "densenet121",
         # "densenet161",
         # "densenet169",
         # "densenet201",
         # "xception",
+        "cifar10_resnet20"
     ],
 )
 
@@ -50,6 +51,7 @@ import matplotlib.pyplot as plt
 import os, sys
 from input_img_layer import InputImageLayer
 from losses import (
+    inception_loss,
     tv_loss_fn,
     softmax_loss_fn,
     score_loss_fn,
@@ -60,17 +62,17 @@ from hook_wrappers import (
 )
 
 from augmentations import RandomCircularShift, RandomDownResolution
-from utils import imagenet_class_name_of, get_timm_network
+from utils import imagenet_class_name_of, get_network
 
 with wandb.init(project="vis-denemeler", config=cfg_args) as run:
     cfg = wandb.config
 
     device = "cuda:0"
+    # device = "cpu"
     torch.backends.cudnn.benchmark = True
 
     networks = [
-        get_timm_network(network_name, device=device)[0]
-        for network_name in cfg.NETWORKS
+        get_network(network_name, device=device)[0] for network_name in cfg.NETWORKS
     ]
     networks = [
         AuxLossWrapper(
@@ -84,10 +86,16 @@ with wandb.init(project="vis-denemeler", config=cfg_args) as run:
     aug_fn = torch.nn.Sequential(
         RandomCircularShift(),
         kornia.augmentation.RandomResizedCrop(
-            size=[224, 224],
+            size=[
+                int(cfg.IMG_SIZE / cfg.CROP_RATIO),
+                int(cfg.IMG_SIZE / cfg.CROP_RATIO),
+            ],
             # scale=(0.8 * input_size[0] / cfg.IMG_SIZE, 1),
             # ratio=(0.8, 1.2),  # aspect ratio
-            scale=(0.9 * 224 / cfg.IMG_SIZE, 1.1 * 224 / cfg.IMG_SIZE),
+            scale=(
+                0.9 / cfg.CROP_RATIO,
+                1.1 * cfg.CROP_RATIO,
+            ),
             ratio=(0.9, 1.1),
             same_on_batch=False,
         ),
@@ -98,6 +106,7 @@ with wandb.init(project="vis-denemeler", config=cfg_args) as run:
         ),
         kornia.augmentation.RandomHorizontalFlip(p=0.5 * cfg.AUG_FLIP),
         kornia.augmentation.RandomVerticalFlip(p=0.5 * cfg.AUG_FLIP),
+        kornia.augmentation.RandomGaussianNoise(mean=0.0, std=0.01, p=1.0),
     )
 
     in_layer = InputImageLayer(
@@ -121,37 +130,38 @@ with wandb.init(project="vis-denemeler", config=cfg_args) as run:
     scaler = torch.cuda.amp.GradScaler(enabled=cfg.USE_AMP)
     start_time = time.time()
     for n in tqdm.tqdm(range(cfg.MAX_ITERATIONS + 1)):
-        with torch.cuda.amp.autocast(enabled=cfg.USE_AMP):
-            optimizer.zero_grad(set_to_none=True)
-            aux_losses = []
-            score_losses = []
-            prob_losses = []
-            tv_losses = []
-            losses = []
-            for idx in range(in_layer.n_classes):
-                net = random.choice(networks)
-                for net in networks:
-                    random_idx = random.choices(
-                        range(in_layer.n_classes), k=cfg.BATCH_SIZE
-                    )
-                    imgs, classes = in_layer(random_idx)
-                    logits, aux_loss = net(imgs)
+        optimizer.zero_grad(set_to_none=True)
+        aux_losses = []
+        score_losses = []
+        prob_losses = []
+        tv_losses = []
+        losses = []
+        for idx in range(in_layer.n_classes):
+            net = random.choice(networks)
+            for net in networks:
+                batch_size = cfg.BATCH_SIZE or (cfg.CROP_RATIO ** 2) * 2
+                random_idx = random.choices(range(in_layer.n_classes), k=batch_size)
+                imgs, classes = in_layer(random_idx)
+                logits, aux_loss = net(imgs)
 
-                    score_loss = softmax_loss_fn(logits, classes) * cfg.LOSS_SCORE_COEFF
-                    # score_loss = score_loss_fn(logits, classes) * cfg.LOSS_SCORE_COEFF
-                    tv_loss = tv_loss_fn(imgs) * cfg.LOSS_TV_COEFF
-                    aux_loss = aux_loss * cfg.LOSS_BN_COEFF
+                # score_loss = softmax_loss_fn(logits, classes) * cfg.LOSS_SCORE_COEFF
+                score_loss = score_loss_fn(logits, classes) * cfg.LOSS_SCORE_COEFF
+                # score_loss = inception_loss(logits, classes, scale=10000)
+                # score_loss = softmax_loss_fn(logits, classes, T=100)
 
-                    loss = (score_loss + tv_loss + aux_loss) / len(networks)
-                    loss.backward()
+                tv_loss = tv_loss_fn(imgs) * cfg.LOSS_TV_COEFF
+                aux_loss = aux_loss * cfg.LOSS_BN_COEFF
 
-                    score_losses.append(score_loss.item())
-                    tv_losses.append(tv_loss.item())
-                    aux_losses.append(aux_loss.item())
-                    losses.append(loss.item())
+                loss = (score_loss + tv_loss + aux_loss) / len(networks)
+                loss.backward()
 
-            optimizer.step()
-            scheduler.step(np.mean(losses))
+                score_losses.append(score_loss.item())
+                tv_losses.append(tv_loss.item())
+                aux_losses.append(aux_loss.item())
+                losses.append(loss.item())
+
+        optimizer.step()
+        scheduler.step(np.mean(losses))
 
         log_dict = {
             "losses/score_loss": np.mean(score_losses),
@@ -167,11 +177,6 @@ with wandb.init(project="vis-denemeler", config=cfg_args) as run:
         # Log heavy things
         if n % 100 == 0 and n >= 100:
             with torch.no_grad():
-                # random_idx = random.choices(range(in_layer.n_classes), k=1024)
-                # imgs, classes = in_layer(random_idx)
-                # logits, aux_loss = net(imgs)
-                # probs = torch.nn.functional.softmax(logits)
-
                 # Log timer things
                 now = time.time()
                 elapsed = now - start_time
