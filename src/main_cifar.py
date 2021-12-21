@@ -6,40 +6,26 @@ cfg_parser = argparse.ArgumentParser()
 cfg_parser.add_argument("--IMG_SIZE", type=int, default=128)
 cfg_parser.add_argument("--CROP_RATIO", type=float, default=4)
 cfg_parser.add_argument("--BATCH_SIZE", type=int, default=None)
-cfg_parser.add_argument("--LEARNING_RATE", type=float, default=0.1)
+cfg_parser.add_argument("--LEARNING_RATE", type=float, default=0.01)
 cfg_parser.add_argument("--MAX_ITERATIONS", type=int, default=10000)
 cfg_parser.add_argument("--PARAM_FN", type=str, default="clip")
 cfg_parser.add_argument("--USE_AMP", type=bool, default=False)
 
 cfg_parser.add_argument("--LOSS_SCORE_COEFF", type=float, default=1)
-cfg_parser.add_argument("--LOSS_TV_COEFF", type=float, default=1)
-cfg_parser.add_argument("--LOSS_BN_COEFF", type=float, default=1)
+cfg_parser.add_argument("--LOSS_TV_COEFF", type=float, default=10)
+cfg_parser.add_argument("--LOSS_BN_COEFF", type=float, default=100)
 cfg_parser.add_argument("--LOSS_BN_LAYERS_MODE", type=str, default="all")
 cfg_parser.add_argument("--LOSS_BN_LAYERS_N", type=int, default=5)
 
-cfg_parser.add_argument("--AUG_FLIP", type=bool, default=False)
-cfg_parser.add_argument("--AUG_ROTATE_DEGREES", type=int, default=30)
+cfg_parser.add_argument("--AUG_FLIP", type=bool, default=True)
+cfg_parser.add_argument("--AUG_ROTATE_DEGREES", type=int, default=180)
 
 # cfg_parser.add_argument("--CLASSES", default=[107, 301, 611, 818])
-cfg_parser.add_argument("--CLASSES", default=[1, 4, 7, 9])
+cfg_parser.add_argument("--CLASSES", default=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
 cfg_parser.add_argument(
     "--NETWORKS",
     type=str,
-    default=[
-        # "tf_efficientnet_b0_ap",
-        # "resnet18",
-        # "resnetblur18",
-        # "resnet26",
-        # "resnet34",
-        # "resnet50",
-        # "resnetblur50",
-        # "densenet121",
-        # "densenet161",
-        # "densenet169",
-        # "densenet201",
-        # "xception",
-        "cifar10_resnet20"
-    ],
+    default=["cifar10_resnet20"],
 )
 
 cfg_args = cfg_parser.parse_args()
@@ -62,12 +48,12 @@ from hook_wrappers import (
 )
 
 from augmentations import RandomCircularShift, RandomDownResolution
-from utils import imagenet_class_name_of, get_network
+from utils import imagenet_class_name_of, cifar_class_name_of, get_network
 
 with wandb.init(project="vis-denemeler", config=cfg_args) as run:
     cfg = wandb.config
 
-    device = "cuda:0"
+    device = "cuda"
     # device = "cpu"
     torch.backends.cudnn.benchmark = True
 
@@ -90,11 +76,9 @@ with wandb.init(project="vis-denemeler", config=cfg_args) as run:
                 int(cfg.IMG_SIZE / cfg.CROP_RATIO),
                 int(cfg.IMG_SIZE / cfg.CROP_RATIO),
             ],
-            # scale=(0.8 * input_size[0] / cfg.IMG_SIZE, 1),
-            # ratio=(0.8, 1.2),  # aspect ratio
             scale=(
                 0.9 / cfg.CROP_RATIO,
-                1.1 * cfg.CROP_RATIO,
+                1.1 / cfg.CROP_RATIO,
             ),
             ratio=(0.9, 1.1),
             same_on_batch=False,
@@ -106,7 +90,7 @@ with wandb.init(project="vis-denemeler", config=cfg_args) as run:
         ),
         kornia.augmentation.RandomHorizontalFlip(p=0.5 * cfg.AUG_FLIP),
         kornia.augmentation.RandomVerticalFlip(p=0.5 * cfg.AUG_FLIP),
-        kornia.augmentation.RandomGaussianNoise(mean=0.0, std=0.01, p=1.0),
+        # kornia.augmentation.RandomGaussianNoise(mean=0.0, std=0.01, p=1.0),
     )
 
     in_layer = InputImageLayer(
@@ -116,20 +100,22 @@ with wandb.init(project="vis-denemeler", config=cfg_args) as run:
         aug_fn=aug_fn,
     ).to(device)
 
-    optimizer = torch.optim.RAdam(
+    optimizer = torch.optim.AdamW(
         in_layer.parameters(),
         lr=cfg.LEARNING_RATE,
+        weight_decay=0.01,
+        betas=[0.5, 0.9],
     )
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer=optimizer,
-        factor=0.9,
-        patience=100,
+        factor=0.5,
+        patience=200,
     )
 
-    scaler = torch.cuda.amp.GradScaler(enabled=cfg.USE_AMP)
     start_time = time.time()
     for n in tqdm.tqdm(range(cfg.MAX_ITERATIONS + 1)):
+        loss_history = []
         optimizer.zero_grad(set_to_none=True)
         aux_losses = []
         score_losses = []
@@ -161,7 +147,12 @@ with wandb.init(project="vis-denemeler", config=cfg_args) as run:
                 losses.append(loss.item())
 
         optimizer.step()
-        scheduler.step(np.mean(losses))
+
+        loss_history.append(np.mean(losses))
+        if len(loss_history) > 100:
+            loss_history = loss_history[:100]
+
+        scheduler.step(np.mean(loss_history))
 
         log_dict = {
             "losses/score_loss": np.mean(score_losses),
@@ -194,7 +185,7 @@ with wandb.init(project="vis-denemeler", config=cfg_args) as run:
                 tensor = in_layer.input_tensor
                 log_imgs = in_layer.get_images()
                 wandb_imgs = [
-                    wandb.Image(img, caption=imagenet_class_name_of(cfg.CLASSES[n]))
+                    wandb.Image(img, caption=cifar_class_name_of(cfg.CLASSES[n]))
                     for n, img in enumerate(log_imgs)
                 ]
 

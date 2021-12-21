@@ -2,30 +2,22 @@ import torch, einops, kornia
 
 
 class InputImageLayer(torch.nn.Module):
-    def __init__(self, img_shape, classes, param_fn, aug_fn=None):
+    def __init__(self, img_shape, classes, param_fn, aug_fn=None, init_img=None):
 
         super().__init__()
         if aug_fn:
             self.aug_fn = aug_fn
         else:
             self.aug_fn = torch.nn.Identity()
+
         self.n_classes = len(classes)
         self.classes = torch.nn.Parameter(torch.tensor(classes), requires_grad=False)
 
-        if param_fn == "sigmoid":
-            self.input_tensor = torch.nn.Parameter(
-                torch.randn(self.n_classes, *img_shape) * 0.01
-            )
-            self.param_fn = torch.nn.Sigmoid()
-
-        elif param_fn == "clip":
-            self.input_tensor = torch.nn.Parameter(
-                torch.randn(self.n_classes, *img_shape) * 0.01 + 0.5
-            )
-            self.param_fn = lambda x: torch.clip(x, 0, 1)
-
-        else:
-            raise Exception("Invalid param_fn")
+        self.input_tensor = torch.nn.Parameter(
+            torch.randn(self.n_classes, *img_shape) * 0.001
+        )
+        self.param_fn = lambda x: torch.clip(x, -0.5, 0.5) + 0.5
+        self.inv_param_fn = lambda x: x - 0.5
 
     def forward(self, indices, augment=True):
         device = self.input_tensor.device
