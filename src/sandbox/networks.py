@@ -1,6 +1,8 @@
 import timm
 import torch
+from src.input_img_layer import InputImageLayer
 
-print(timm.list_models("*swin*", pretrained=True))
+# in_layer = InputImageLayer([3, 50, 50], [2], param_fn="clip")
+# imgs, classes = in_layer([0])
 
-model = timm.create_model("swin_base_patch4_window7_224", pretrained=False)
+timm.list_models("*resnex*", pretrained=True)

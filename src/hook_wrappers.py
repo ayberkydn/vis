@@ -63,7 +63,10 @@ class AuxLossWrapper(torch.nn.Module):
         del self.losses
         self.losses = []
         out = self.model(x)
-        loss = torch.mean(torch.stack(self.losses))
+        if self.losses:
+            loss = torch.mean(torch.stack(self.losses))
+        else:
+            loss = torch.tensor(0.0, requires_grad=True)
         return out, loss
 
 

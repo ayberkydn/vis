@@ -44,3 +44,6 @@ class InputImageLayer(torch.nn.Module):
                     img_ = img_np
                 images.append(img_)
             return images
+
+    def get_classes(self):
+        return self.classes

@@ -34,6 +34,9 @@ RUN pip install --no-cache-dir pytorch-lightning      \
 
 RUN pip install black
 RUN pip install antialiased-cnns
+RUN pip install piqa
+RUN pip install piq
+RUN pip install lpips
 
 
 # add user

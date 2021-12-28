@@ -1,9 +1,11 @@
 import PIL
+from kornia.constants import Resample
 from kornia.geometry.transform.pyramid import pyrup
 from kornia.utils.image import image_list_to_tensor
 import torch, random, kornia, numpy
 import torchvision
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 class RandomCircularShift(torch.nn.Module):
@@ -22,6 +24,41 @@ class RandomCircularShift(torch.nn.Module):
         shift_W = random.randint(-w_max, w_max - 1)
         shifted_img = torch.roll(x, shifts=(shift_H, shift_W), dims=(-2, -1))
         return shifted_img
+
+
+class RandomWeightedResizedCrop(torch.nn.Module):
+    def __init__(self, size, scale, ratio, same_on_batch=False, resample="bilinear"):
+        super().__init__()
+
+        self.scale_space = np.linspace(scale[0], scale[1], num=10)
+        unnormd_probs = 1 / (np.square(self.scale_space))
+        self.probs = unnormd_probs / unnormd_probs.sum()
+        self.candidates = [
+            kornia.augmentation.RandomResizedCrop(
+                size=size,
+                scale=(scale_, scale_),
+                ratio=ratio,
+                same_on_batch=same_on_batch,
+                resample=resample,
+            )
+            for scale_ in self.scale_space
+        ]
+        self.history = [0 for cand in self.candidates]
+
+    def forward(self, x):
+        n = np.random.choice(a=range(len(self.probs)), p=self.probs)
+        self.history[n] = self.history[n] + 1
+        aug = np.random.choice(a=self.candidates, p=self.probs)
+        # return x
+        return aug(x)
+
+
+class SmoothEdges(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x
 
 
 class RandomDownResolution(torch.nn.Module):
@@ -54,11 +91,10 @@ class RandomDownResolution(torch.nn.Module):
 
 
 if __name__ == "__main__":
-    aug = RandomCircularShift(ratio=0.25)
+    aug = RandomWeightedResizedCrop((128, 128), (0.1, 1), (1, 1))
     to_tensor = torchvision.transforms.ToTensor()
     img = to_tensor(PIL.Image.open("sample.jpeg").resize([256, 256])).unsqueeze(0)
-    dres_img = aug(img)
-    print(dres_img.shape)
+    aug_img = aug(img)
 
     plt.imshow(kornia.utils.tensor_to_image(aug(img)))
     plt.show()

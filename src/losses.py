@@ -36,8 +36,10 @@ def tv_loss_fn(imgs):
     pixel_dif2 = imgs[..., :, 1:] - imgs[..., :, :-1]
 
     reduce_axes = (-3, -2, -1)
-    res1 = torch.square(pixel_dif1).mean()
-    res2 = torch.square(pixel_dif2).mean()
+    # res1 = torch.square(pixel_dif1).mean()
+    # res2 = torch.square(pixel_dif2).mean()
+    res1 = torch.abs(pixel_dif1).mean()
+    res2 = torch.abs(pixel_dif2).mean()
 
     return res1 + res2
 
